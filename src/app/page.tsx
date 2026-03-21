@@ -5,7 +5,8 @@ import { generateRoomCode } from '@/lib/generateCode';
 import { generateName } from '@/lib/generateName';
 import { useAudioChat } from '@/hooks/useAudioChat';
 import { AudioPlayer } from '@/components/AudioPlayer';
-import { Mic, MicOff, PhoneOff, Users, Copy, Check, Dices, Send, Smile } from 'lucide-react';
+import { VoiceEffect } from '@/lib/audioEffects';
+import { Mic, MicOff, PhoneOff, Users, Copy, Check, Dices, Send, Smile, Volume2, Sparkles, Zap, Radio } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import EmojiPicker from 'emoji-picker-react';
 import confetti from 'canvas-confetti';
@@ -23,7 +24,22 @@ export default function Home() {
     setUsername(generateName());
   }, []);
 
-  const { peers, peerNames, isMuted, toggleMute, error, isConnected, chatMessages, sendMessage } = useAudioChat(roomCode, username);
+  const { 
+    peers, 
+    peerNames, 
+    isMuted, 
+    toggleMute, 
+    error, 
+    isConnected, 
+    chatMessages, 
+    sendMessage,
+    voiceEffect,
+    setVoiceEffect,
+    sendReaction,
+    triggerSound,
+    floatingReactions,
+    removeReaction
+  } = useAudioChat(roomCode, username);
 
   // Scroll to bottom of chat
   useEffect(() => {
@@ -82,34 +98,54 @@ export default function Home() {
 
   if (roomCode) {
     return (
-      <div className="min-h-screen bg-slate-900 text-white flex flex-col md:flex-row items-center justify-center p-4 gap-6">
+      <div className="min-h-screen bg-slate-900 text-white flex flex-col md:flex-row items-center justify-center p-4 gap-6 relative overflow-hidden">
+        
+        {/* Floating Reactions Layer */}
+        <div className="pointer-events-none fixed inset-0 z-50 overflow-hidden">
+          <AnimatePresence>
+            {floatingReactions.map(reaction => (
+              <motion.div
+                key={reaction.id}
+                initial={{ opacity: 1, y: '100vh', x: `${reaction.x}vw`, scale: 1 }}
+                animate={{ opacity: 0, y: '-10vh', scale: 2 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 3, ease: 'easeOut' }}
+                className="absolute text-6xl"
+                onAnimationComplete={() => removeReaction(reaction.id)}
+              >
+                {reaction.emoji}
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+
         {/* Left Column: Audio & Controls */}
         <motion.div 
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
-          className="bg-slate-800 p-8 rounded-3xl shadow-2xl w-full max-w-md text-center border border-slate-700 flex flex-col h-[80vh]"
+          className="bg-slate-800 p-8 rounded-3xl shadow-2xl w-full max-w-md text-center border border-slate-700 flex flex-col h-[85vh]"
         >
           <h2 className="text-2xl font-bold mb-2 text-slate-300">Room Code</h2>
           <div 
             onClick={copyCode}
-            className="bg-slate-900 p-4 rounded-xl text-3xl font-black text-emerald-400 mb-6 cursor-pointer hover:bg-slate-950 transition-colors flex items-center justify-center gap-3 group"
+            className="bg-slate-900 p-4 rounded-xl text-3xl font-black text-emerald-400 mb-4 cursor-pointer hover:bg-slate-950 transition-colors flex items-center justify-center gap-3 group"
           >
             {roomCode}
             {copied ? <Check className="w-6 h-6 text-emerald-400" /> : <Copy className="w-6 h-6 text-slate-500 group-hover:text-emerald-400 transition-colors" />}
           </div>
 
           {error && (
-            <div className="bg-red-500/20 text-red-400 p-3 rounded-lg mb-6 text-sm">
+            <div className="bg-red-500/20 text-red-400 p-3 rounded-lg mb-4 text-sm">
               {error}
             </div>
           )}
 
-          <div className="flex items-center justify-center gap-2 mb-8 text-slate-400">
+          <div className="flex items-center justify-center gap-2 mb-4 text-slate-400">
             <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500 animate-pulse'}`} />
             {isConnected ? 'Connected' : 'Connecting...'}
           </div>
 
-          <div className="bg-slate-900 rounded-2xl p-6 mb-8 flex-grow overflow-y-auto">
+          <div className="bg-slate-900 rounded-2xl p-6 mb-4 flex-grow overflow-y-auto">
             <div className="flex items-center justify-center gap-3 mb-6 text-slate-300">
               <Users className="w-5 h-5" />
               <span className="font-medium">Kids in Chat: {Object.keys(peers).length + 1}</span>
@@ -142,6 +178,26 @@ export default function Home() {
             </div>
           </div>
 
+          {/* Voice Changer */}
+          <div className="mb-6">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Voice Changer</p>
+            <div className="flex justify-center gap-2">
+              {(['none', 'robot', 'cave', 'radio'] as VoiceEffect[]).map((effect) => (
+                <button
+                  key={effect}
+                  onClick={() => setVoiceEffect(effect)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                    voiceEffect === effect 
+                      ? 'bg-indigo-500 text-white' 
+                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                  }`}
+                >
+                  {effect === 'none' ? 'Normal' : effect.charAt(0).toUpperCase() + effect.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="flex justify-center gap-4 mt-auto">
             <button
               onClick={toggleMute}
@@ -162,16 +218,39 @@ export default function Home() {
           </div>
         </motion.div>
 
-        {/* Right Column: Text Chat */}
+        {/* Right Column: Text Chat & Fun Zone */}
         <motion.div 
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
-          className="bg-slate-800 rounded-3xl shadow-2xl w-full max-w-md border border-slate-700 flex flex-col h-[80vh] overflow-hidden relative"
+          className="bg-slate-800 rounded-3xl shadow-2xl w-full max-w-md border border-slate-700 flex flex-col h-[85vh] overflow-hidden relative"
         >
           <div className="bg-slate-900 p-4 border-b border-slate-700">
-            <h3 className="font-bold text-lg text-slate-200">Fun Chat 💬</h3>
+            <h3 className="font-bold text-lg text-slate-200">Fun Zone 💬</h3>
           </div>
           
+          {/* Soundboard & Reactions */}
+          <div className="bg-slate-800/80 p-3 border-b border-slate-700 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Soundboard</span>
+              <div className="flex gap-2">
+                <button onClick={() => triggerSound('laser')} className="p-2 bg-slate-700 hover:bg-indigo-500 rounded-lg transition-colors text-xl" title="Laser">🔫</button>
+                <button onClick={() => triggerSound('magic')} className="p-2 bg-slate-700 hover:bg-purple-500 rounded-lg transition-colors text-xl" title="Magic">✨</button>
+                <button onClick={() => triggerSound('buzzer')} className="p-2 bg-slate-700 hover:bg-red-500 rounded-lg transition-colors text-xl" title="Buzzer">🚨</button>
+                <button onClick={() => triggerSound('jump')} className="p-2 bg-slate-700 hover:bg-emerald-500 rounded-lg transition-colors text-xl" title="Jump">🦘</button>
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Reactions</span>
+              <div className="flex gap-2">
+                <button onClick={() => sendReaction('😂')} className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-xl hover:scale-110 transform">😂</button>
+                <button onClick={() => sendReaction('❤️')} className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-xl hover:scale-110 transform">❤️</button>
+                <button onClick={() => sendReaction('😮')} className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-xl hover:scale-110 transform">😮</button>
+                <button onClick={() => sendReaction('🔥')} className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-xl hover:scale-110 transform">🔥</button>
+              </div>
+            </div>
+          </div>
+
           <div className="flex-grow p-4 overflow-y-auto space-y-4 bg-slate-800/50">
             {chatMessages.length === 0 ? (
               <div className="h-full flex items-center justify-center text-slate-500 text-sm italic">
@@ -193,7 +272,7 @@ export default function Home() {
             <div ref={chatEndRef} />
           </div>
 
-          <form onSubmit={handleSendMessage} className="p-4 bg-slate-900 border-t border-slate-700 flex gap-2 relative">
+          <form onSubmit={handleSendMessage} className="p-4 bg-slate-900 border-t border-slate-700 flex gap-2 relative z-40">
             <button 
               type="button"
               onClick={() => setShowEmojiPicker(!showEmojiPicker)}

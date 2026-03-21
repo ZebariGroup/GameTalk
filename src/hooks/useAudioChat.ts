@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
+import { applyVoiceEffect, playSound, VoiceEffect } from '@/lib/audioEffects';
 
 // STUN servers to help peers connect over the internet
 const ICE_SERVERS = {
@@ -20,18 +21,29 @@ export interface ChatMessage {
   timestamp: number;
 }
 
+export interface Reaction {
+  id: string;
+  emoji: string;
+  x: number;
+}
+
 export function useAudioChat(roomCode: string | null, username: string) {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [peers, setPeers] = useState<{ [id: string]: MediaStream }>({});
   const [peerNames, setPeerNames] = useState<{ [id: string]: string }>({});
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [floatingReactions, setFloatingReactions] = useState<Reaction[]>([]);
   const [isMuted, setIsMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [voiceEffect, setVoiceEffect] = useState<VoiceEffect>('none');
 
   const myId = useRef(Math.random().toString(36).substring(2, 15));
   const channelRef = useRef<RealtimeChannel | null>(null);
   const peerConnections = useRef<{ [id: string]: RTCPeerConnection }>({});
+  
+  const originalStreamRef = useRef<MediaStream | null>(null);
+  const processedStreamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     if (!roomCode) return;
@@ -43,7 +55,12 @@ export function useAudioChat(roomCode: string | null, username: string) {
         // 1. Get local audio
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
         if (!mounted) return;
-        setLocalStream(stream);
+        
+        originalStreamRef.current = stream;
+        const processedStream = applyVoiceEffect(stream, voiceEffect);
+        processedStreamRef.current = processedStream;
+        
+        setLocalStream(stream); // keep original for muting
 
         // 2. Join Supabase Channel for signaling
         const channel = supabase.channel(`room-${roomCode}`);
@@ -57,7 +74,7 @@ export function useAudioChat(roomCode: string | null, username: string) {
             setPeerNames(prev => ({ ...prev, [peerId]: peerName || 'Kid' }));
 
             // A new peer joined, let's create a connection and send an offer
-            const pc = createPeerConnection(peerId, stream, channel);
+            const pc = createPeerConnection(peerId, processedStreamRef.current!, channel);
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
             
@@ -79,7 +96,7 @@ export function useAudioChat(roomCode: string | null, username: string) {
             
             if (signal.type === 'offer') {
               if (!pc) {
-                pc = createPeerConnection(sender, stream, channel);
+                pc = createPeerConnection(sender, processedStreamRef.current!, channel);
               }
               await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
               const answer = await pc.createAnswer();
@@ -102,6 +119,12 @@ export function useAudioChat(roomCode: string | null, username: string) {
           })
           .on('broadcast', { event: 'chat-message' }, ({ payload }) => {
             setChatMessages(prev => [...prev, payload]);
+          })
+          .on('broadcast', { event: 'reaction' }, ({ payload }) => {
+            setFloatingReactions(prev => [...prev, { id: Math.random().toString(), emoji: payload.emoji, x: Math.random() * 80 + 10 }]);
+          })
+          .on('broadcast', { event: 'sound' }, ({ payload }) => {
+            playSound(payload.soundId);
           })
           .on('broadcast', { event: 'peer-left' }, ({ payload }) => {
             const { peerId } = payload;
@@ -146,6 +169,23 @@ export function useAudioChat(roomCode: string | null, username: string) {
       }
     };
   }, [roomCode]);
+
+  useEffect(() => {
+    if (!originalStreamRef.current) return;
+    
+    // Apply new effect
+    const newStream = applyVoiceEffect(originalStreamRef.current, voiceEffect);
+    processedStreamRef.current = newStream;
+    const newAudioTrack = newStream.getAudioTracks()[0];
+    
+    // Replace track in all active peer connections
+    Object.values(peerConnections.current).forEach(pc => {
+      const sender = pc.getSenders().find(s => s.track?.kind === 'audio');
+      if (sender) {
+        sender.replaceTrack(newAudioTrack);
+      }
+    });
+  }, [voiceEffect]);
 
   const createPeerConnection = (peerId: string, stream: MediaStream, channel: RealtimeChannel) => {
     const pc = new RTCPeerConnection(ICE_SERVERS);
@@ -225,6 +265,22 @@ export function useAudioChat(roomCode: string | null, username: string) {
     setChatMessages(prev => [...prev, message]);
   };
 
+  const sendReaction = (emoji: string) => {
+    if (!channelRef.current || !isConnected) return;
+    channelRef.current.send({ type: 'broadcast', event: 'reaction', payload: { emoji } });
+    setFloatingReactions(prev => [...prev, { id: Math.random().toString(), emoji, x: Math.random() * 80 + 10 }]);
+  };
+
+  const triggerSound = (soundId: string) => {
+    if (!channelRef.current || !isConnected) return;
+    channelRef.current.send({ type: 'broadcast', event: 'sound', payload: { soundId } });
+    playSound(soundId);
+  };
+
+  const removeReaction = (id: string) => {
+    setFloatingReactions(prev => prev.filter(r => r.id !== id));
+  };
+
   return {
     localStream,
     peers,
@@ -234,6 +290,12 @@ export function useAudioChat(roomCode: string | null, username: string) {
     error,
     isConnected,
     chatMessages,
-    sendMessage
+    sendMessage,
+    voiceEffect,
+    setVoiceEffect,
+    sendReaction,
+    triggerSound,
+    floatingReactions,
+    removeReaction
   };
 }
