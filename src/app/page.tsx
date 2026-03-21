@@ -8,7 +8,7 @@ import { AudioPlayer } from '@/components/AudioPlayer';
 import { VoiceEffect } from '@/lib/audioEffects';
 import { Mic, MicOff, PhoneOff, Users, Copy, Check, Dices, Send, Smile, Volume2, Sparkles, Zap, Radio } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import EmojiPicker from 'emoji-picker-react';
+import EmojiPicker, { Theme } from 'emoji-picker-react';
 import confetti from 'canvas-confetti';
 
 export default function Home() {
@@ -289,7 +289,7 @@ export default function Home() {
                   exit={{ opacity: 0, y: 10 }}
                   className="absolute bottom-20 left-4 z-50"
                 >
-                  <EmojiPicker onEmojiClick={onEmojiClick} theme="dark" />
+                  <EmojiPicker onEmojiClick={onEmojiClick} theme={Theme.DARK} />
                 </motion.div>
               )}
             </AnimatePresence>
