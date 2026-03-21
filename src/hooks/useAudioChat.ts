@@ -13,6 +13,8 @@ const ICE_SERVERS = {
   ],
 };
 
+export type UserRole = 'kid' | 'observer';
+
 export interface ChatMessage {
   id: string;
   senderId: string;
@@ -27,10 +29,10 @@ export interface Reaction {
   x: number;
 }
 
-export function useAudioChat(roomCode: string | null, username: string) {
+export function useAudioChat(roomCode: string | null, username: string, role: UserRole = 'kid') {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [peers, setPeers] = useState<{ [id: string]: MediaStream }>({});
-  const [peerNames, setPeerNames] = useState<{ [id: string]: string }>({});
+  const [peerNames, setPeerNames] = useState<{ [id: string]: { name: string, role: UserRole } }>({});
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [floatingReactions, setFloatingReactions] = useState<Reaction[]>([]);
   const [isMuted, setIsMuted] = useState(false);
@@ -52,51 +54,93 @@ export function useAudioChat(roomCode: string | null, username: string) {
 
     const initChat = async () => {
       try {
-        // 1. Get local audio
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-        if (!mounted) return;
-        
-        originalStreamRef.current = stream;
-        const processedStream = applyVoiceEffect(stream, voiceEffect);
-        processedStreamRef.current = processedStream;
-        
-        setLocalStream(stream); // keep original for muting
+        // 1. Check room max members in DB
+        const { data: roomData, error: roomError } = await supabase
+          .from('rooms')
+          .select('max_members')
+          .eq('code', roomCode)
+          .single();
 
-        // 2. Join Supabase Channel for signaling
-        const channel = supabase.channel(`room-${roomCode}`);
+        if (roomError || !roomData) {
+          setError('Invalid room code or room has expired.');
+          return;
+        }
+
+        const maxMembers = roomData.max_members;
+
+        // 2. Get local audio (ONLY if not observer)
+        let stream: MediaStream | null = null;
+        if (role === 'kid') {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          if (!mounted) return;
+          
+          originalStreamRef.current = stream;
+          const processedStream = applyVoiceEffect(stream, voiceEffect);
+          processedStreamRef.current = processedStream;
+          
+          setLocalStream(stream); // keep original for muting
+        }
+
+        // 3. Join Supabase Channel for signaling
+        const channel = supabase.channel(`room-${roomCode}`, {
+          config: {
+            presence: {
+              key: myId.current,
+            },
+          },
+        });
         channelRef.current = channel;
 
         channel
+          .on('presence', { event: 'sync' }, () => {
+            const state = channel.presenceState();
+            let kidCount = 0;
+            for (const key in state) {
+              const presenceArray = state[key] as any[];
+              if (presenceArray[0]?.role === 'kid') {
+                kidCount++;
+              }
+            }
+            
+            // If we are a kid and we pushed the count over the limit, we must leave
+            if (role === 'kid' && kidCount > maxMembers) {
+              setError(`This room is full (Max ${maxMembers} kids).`);
+              channel.unsubscribe();
+              if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+              }
+            }
+          })
           .on('broadcast', { event: 'peer-joined' }, async ({ payload }) => {
-            const { peerId, peerName } = payload;
+            const { peerId, peerName, peerRole } = payload;
             if (peerId === myId.current) return;
             
-            setPeerNames(prev => ({ ...prev, [peerId]: peerName || 'Kid' }));
+            setPeerNames(prev => ({ ...prev, [peerId]: { name: peerName || 'Kid', role: peerRole || 'kid' } }));
 
             // A new peer joined, let's create a connection and send an offer
-            const pc = createPeerConnection(peerId, processedStreamRef.current!, channel);
+            const pc = createPeerConnection(peerId, processedStreamRef.current, channel);
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
             
             channel.send({
               type: 'broadcast',
               event: 'signal',
-              payload: { target: peerId, sender: myId.current, senderName: username, signal: { type: 'offer', sdp: offer } }
+              payload: { target: peerId, sender: myId.current, senderName: username, senderRole: role, signal: { type: 'offer', sdp: offer } }
             });
           })
           .on('broadcast', { event: 'signal' }, async ({ payload }) => {
-            const { target, sender, senderName, signal } = payload;
+            const { target, sender, senderName, senderRole, signal } = payload;
             if (target !== myId.current) return;
 
             if (senderName) {
-              setPeerNames(prev => ({ ...prev, [sender]: senderName }));
+              setPeerNames(prev => ({ ...prev, [sender]: { name: senderName, role: senderRole || 'kid' } }));
             }
 
             let pc = peerConnections.current[sender];
             
             if (signal.type === 'offer') {
               if (!pc) {
-                pc = createPeerConnection(sender, processedStreamRef.current!, channel);
+                pc = createPeerConnection(sender, processedStreamRef.current, channel);
               }
               await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
               const answer = await pc.createAnswer();
@@ -105,7 +149,7 @@ export function useAudioChat(roomCode: string | null, username: string) {
               channel.send({
                 type: 'broadcast',
                 event: 'signal',
-                payload: { target: sender, sender: myId.current, senderName: username, signal: { type: 'answer', sdp: answer } }
+                payload: { target: sender, sender: myId.current, senderName: username, senderRole: role, signal: { type: 'answer', sdp: answer } }
               });
             } else if (signal.type === 'answer') {
               if (pc) {
@@ -130,14 +174,18 @@ export function useAudioChat(roomCode: string | null, username: string) {
             const { peerId } = payload;
             removePeer(peerId);
           })
-          .subscribe((status) => {
+          .subscribe(async (status) => {
             if (status === 'SUBSCRIBED') {
               setIsConnected(true);
-              // Announce we have joined
+              
+              // Track presence for counting max members
+              await channel.track({ role });
+
+              // Announce we have joined for WebRTC signaling
               channel.send({
                 type: 'broadcast',
                 event: 'peer-joined',
-                payload: { peerId: myId.current, peerName: username }
+                payload: { peerId: myId.current, peerName: username, peerRole: role }
               });
             }
           });
@@ -158,6 +206,7 @@ export function useAudioChat(roomCode: string | null, username: string) {
           event: 'peer-left',
           payload: { peerId: myId.current }
         });
+        channelRef.current.untrack();
         supabase.removeChannel(channelRef.current);
       }
       
@@ -171,7 +220,7 @@ export function useAudioChat(roomCode: string | null, username: string) {
   }, [roomCode]);
 
   useEffect(() => {
-    if (!originalStreamRef.current) return;
+    if (!originalStreamRef.current || role === 'observer') return;
     
     // Apply new effect
     const newStream = applyVoiceEffect(originalStreamRef.current, voiceEffect);
@@ -187,14 +236,19 @@ export function useAudioChat(roomCode: string | null, username: string) {
     });
   }, [voiceEffect]);
 
-  const createPeerConnection = (peerId: string, stream: MediaStream, channel: RealtimeChannel) => {
+  const createPeerConnection = (peerId: string, stream: MediaStream | null, channel: RealtimeChannel) => {
     const pc = new RTCPeerConnection(ICE_SERVERS);
     peerConnections.current[peerId] = pc;
 
-    // Add local tracks
-    stream.getTracks().forEach(track => {
-      pc.addTrack(track, stream);
-    });
+    if (stream) {
+      // Add local tracks if we are a kid
+      stream.getTracks().forEach(track => {
+        pc.addTrack(track, stream);
+      });
+    } else {
+      // If observer, we just want to receive audio
+      pc.addTransceiver('audio', { direction: 'recvonly' });
+    }
 
     // Handle incoming ICE candidates
     pc.onicecandidate = (event) => {

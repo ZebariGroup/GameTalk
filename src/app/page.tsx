@@ -3,13 +3,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { generateRoomCode } from '@/lib/generateCode';
 import { generateName } from '@/lib/generateName';
-import { useAudioChat } from '@/hooks/useAudioChat';
+import { useAudioChat, UserRole } from '@/hooks/useAudioChat';
 import { AudioPlayer } from '@/components/AudioPlayer';
 import { VoiceEffect } from '@/lib/audioEffects';
-import { Mic, MicOff, PhoneOff, Users, Copy, Check, Dices, Send, Smile, Volume2, Sparkles, Zap, Radio } from 'lucide-react';
+import { Mic, MicOff, PhoneOff, Users, Copy, Check, Dices, Send, Smile, Volume2, Sparkles, Zap, Radio, Eye } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
 import confetti from 'canvas-confetti';
+import { supabase } from '@/lib/supabase';
 
 export default function Home() {
   const [roomCode, setRoomCode] = useState<string | null>(null);
@@ -18,11 +19,16 @@ export default function Home() {
   const [username, setUsername] = useState('');
   const [chatInput, setChatInput] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [maxMembers, setMaxMembers] = useState<number>(3);
+  const [isMomMode, setIsMomMode] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setUsername(generateName());
   }, []);
+
+  const role: UserRole = isMomMode ? 'observer' : 'kid';
 
   const { 
     peers, 
@@ -39,16 +45,16 @@ export default function Home() {
     triggerSound,
     floatingReactions,
     removeReaction
-  } = useAudioChat(roomCode, username);
+  } = useAudioChat(roomCode, username, role);
 
   // Scroll to bottom of chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
-  // Confetti when connected
+  // Confetti when connected (only for kids)
   useEffect(() => {
-    if (isConnected) {
+    if (isConnected && role === 'kid') {
       confetti({
         particleCount: 100,
         spread: 70,
@@ -56,14 +62,29 @@ export default function Home() {
         colors: ['#34d399', '#38bdf8', '#818cf8', '#c084fc']
       });
     }
-  }, [isConnected]);
+  }, [isConnected, role]);
 
-  const handleCreateRoom = () => {
+  const handleCreateRoom = async () => {
+    setIsCreating(true);
     const code = generateRoomCode();
+    
+    // Save room to DB with max members
+    const { error } = await supabase.from('rooms').insert([
+      { code, max_members: maxMembers }
+    ]);
+
+    setIsCreating(false);
+
+    if (error) {
+      alert("Failed to create room. Please try again.");
+      console.error(error);
+      return;
+    }
+
     setRoomCode(code);
   };
 
-  const handleJoinRoom = (e: React.FormEvent) => {
+  const handleJoinRoom = async (e: React.FormEvent) => {
     e.preventDefault();
     if (joinCode.trim()) {
       setRoomCode(joinCode.trim());
@@ -73,6 +94,7 @@ export default function Home() {
   const handleLeaveRoom = () => {
     setRoomCode(null);
     setJoinCode('');
+    setIsMomMode(false);
   };
 
   const copyCode = () => {
@@ -95,6 +117,9 @@ export default function Home() {
   const onEmojiClick = (emojiObject: any) => {
     setChatInput(prev => prev + emojiObject.emoji);
   };
+
+  // Filter out observers from the visible peers list
+  const visiblePeers = Object.entries(peers).filter(([id]) => peerNames[id]?.role === 'kid');
 
   if (roomCode) {
     return (
@@ -148,67 +173,83 @@ export default function Home() {
           <div className="bg-slate-900 rounded-2xl p-6 mb-4 flex-grow overflow-y-auto">
             <div className="flex items-center justify-center gap-3 mb-6 text-slate-300">
               <Users className="w-5 h-5" />
-              <span className="font-medium">Kids in Chat: {Object.keys(peers).length + 1}</span>
+              <span className="font-medium">Kids in Chat: {visiblePeers.length + (role === 'kid' ? 1 : 0)}</span>
             </div>
             
             <div className="flex justify-center gap-6 flex-wrap">
-              {/* Local User */}
-              <div className="flex flex-col items-center gap-2">
-                <div className="w-20 h-20 rounded-full bg-indigo-500 flex items-center justify-center text-3xl shadow-lg border-4 border-indigo-400 relative">
-                  😎
-                  {isMuted && (
-                    <div className="absolute -bottom-2 -right-2 bg-red-500 rounded-full p-1.5 border-2 border-slate-900">
-                      <MicOff className="w-4 h-4 text-white" />
-                    </div>
-                  )}
+              {/* Local User (Only show if kid) */}
+              {role === 'kid' && (
+                <div className="flex flex-col items-center gap-2">
+                  <div className="w-20 h-20 rounded-full bg-indigo-500 flex items-center justify-center text-3xl shadow-lg border-4 border-indigo-400 relative">
+                    😎
+                    {isMuted && (
+                      <div className="absolute -bottom-2 -right-2 bg-red-500 rounded-full p-1.5 border-2 border-slate-900">
+                        <MicOff className="w-4 h-4 text-white" />
+                      </div>
+                    )}
+                  </div>
+                  <span className="font-bold text-sm text-indigo-300">{username} (You)</span>
                 </div>
-                <span className="font-bold text-sm text-indigo-300">{username} (You)</span>
-              </div>
+              )}
+
+              {/* Observer Indicator (Only visible to observer) */}
+              {role === 'observer' && (
+                <div className="flex flex-col items-center gap-2">
+                  <div className="w-20 h-20 rounded-full bg-slate-700 flex items-center justify-center text-3xl shadow-lg border-4 border-slate-500 relative">
+                    <Eye className="w-8 h-8 text-slate-400" />
+                  </div>
+                  <span className="font-bold text-sm text-slate-400">Invisible Observer</span>
+                </div>
+              )}
               
-              {/* Remote Peers */}
-              {Object.entries(peers).map(([id, stream]) => (
+              {/* Remote Peers (Only Kids) */}
+              {visiblePeers.map(([id, stream]) => (
                 <div key={id} className="flex flex-col items-center gap-2">
                   <div className="w-20 h-20 rounded-full bg-emerald-500 flex items-center justify-center text-3xl shadow-lg border-4 border-emerald-400 relative">
                     <AudioPlayer stream={stream} />
                     👾
                   </div>
-                  <span className="font-bold text-sm text-emerald-300">{peerNames[id] || 'Kid'}</span>
+                  <span className="font-bold text-sm text-emerald-300">{peerNames[id]?.name || 'Kid'}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Voice Changer */}
-          <div className="mb-6">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Voice Changer</p>
-            <div className="flex justify-center gap-2">
-              {(['none', 'robot', 'cave', 'radio'] as VoiceEffect[]).map((effect) => (
-                <button
-                  key={effect}
-                  onClick={() => setVoiceEffect(effect)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                    voiceEffect === effect 
-                      ? 'bg-indigo-500 text-white' 
-                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                  }`}
-                >
-                  {effect === 'none' ? 'Normal' : effect.charAt(0).toUpperCase() + effect.slice(1)}
-                </button>
-              ))}
+          {/* Voice Changer (Only for kids) */}
+          {role === 'kid' && (
+            <div className="mb-6">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Voice Changer</p>
+              <div className="flex justify-center gap-2">
+                {(['none', 'robot', 'cave', 'radio'] as VoiceEffect[]).map((effect) => (
+                  <button
+                    key={effect}
+                    onClick={() => setVoiceEffect(effect)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                      voiceEffect === effect 
+                        ? 'bg-indigo-500 text-white' 
+                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                    }`}
+                  >
+                    {effect === 'none' ? 'Normal' : effect.charAt(0).toUpperCase() + effect.slice(1)}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="flex justify-center gap-4 mt-auto">
-            <button
-              onClick={toggleMute}
-              className={`p-4 rounded-full transition-colors ${
-                isMuted 
-                  ? 'bg-red-500 hover:bg-red-600 text-white' 
-                  : 'bg-slate-700 hover:bg-slate-600 text-white'
-              }`}
-            >
-              {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
-            </button>
+            {role === 'kid' && (
+              <button
+                onClick={toggleMute}
+                className={`p-4 rounded-full transition-colors ${
+                  isMuted 
+                    ? 'bg-red-500 hover:bg-red-600 text-white' 
+                    : 'bg-slate-700 hover:bg-slate-600 text-white'
+                }`}
+              >
+                {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
+              </button>
+            )}
             <button
               onClick={handleLeaveRoom}
               className="p-4 rounded-full bg-red-500 hover:bg-red-600 text-white transition-colors"
@@ -345,12 +386,28 @@ export default function Home() {
             </div>
           </div>
 
-          <div>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between bg-slate-900 p-3 rounded-xl border border-slate-700">
+              <label htmlFor="maxMembers" className="text-sm font-medium text-slate-300">
+                Max Kids Allowed:
+              </label>
+              <select
+                id="maxMembers"
+                value={maxMembers}
+                onChange={(e) => setMaxMembers(Number(e.target.value))}
+                className="bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                {[2, 3, 4, 5, 6, 10].map(num => (
+                  <option key={num} value={num}>{num} Kids</option>
+                ))}
+              </select>
+            </div>
             <button
               onClick={handleCreateRoom}
-              className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-4 px-6 rounded-xl transition-colors text-lg shadow-lg shadow-emerald-500/20"
+              disabled={isCreating}
+              className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-500/50 text-white font-bold py-4 px-6 rounded-xl transition-colors text-lg shadow-lg shadow-emerald-500/20"
             >
-              Create New Chat
+              {isCreating ? 'Creating...' : 'Create New Chat'}
             </button>
           </div>
 
@@ -370,9 +427,21 @@ export default function Home() {
                 type="text"
                 value={joinCode}
                 onChange={(e) => setJoinCode(e.target.value)}
-                placeholder="e.g. BlueMonkeyHappy"
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-4 text-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+                placeholder="e.g. BlueMonkeyHappy-42"
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-4 text-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all mb-3"
               />
+              
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <input 
+                  type="checkbox" 
+                  checked={isMomMode}
+                  onChange={(e) => setIsMomMode(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-600 text-indigo-500 focus:ring-indigo-500 bg-slate-900"
+                />
+                <span className="text-sm text-slate-400 group-hover:text-slate-300 transition-colors flex items-center gap-1">
+                  <Eye className="w-4 h-4" /> Mom Mode (Join Invisibly)
+                </span>
+              </label>
             </div>
             <button
               type="submit"

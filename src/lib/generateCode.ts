@@ -6,6 +6,7 @@ export function generateRoomCode(): string {
   const color = colors[Math.floor(Math.random() * colors.length)];
   const animal = animals[Math.floor(Math.random() * animals.length)];
   const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
+  const number = Math.floor(Math.random() * 90 + 10); // 10-99
   
-  return `${color}${animal}${adjective}`;
+  return `${color}${animal}${adjective}-${number}`;
 }
