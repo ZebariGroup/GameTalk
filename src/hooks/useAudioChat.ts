@@ -12,9 +12,19 @@ const ICE_SERVERS = {
   ],
 };
 
-export function useAudioChat(roomCode: string | null) {
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  text: string;
+  timestamp: number;
+}
+
+export function useAudioChat(roomCode: string | null, username: string) {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [peers, setPeers] = useState<{ [id: string]: MediaStream }>({});
+  const [peerNames, setPeerNames] = useState<{ [id: string]: string }>({});
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isMuted, setIsMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -41,9 +51,11 @@ export function useAudioChat(roomCode: string | null) {
 
         channel
           .on('broadcast', { event: 'peer-joined' }, async ({ payload }) => {
-            const { peerId } = payload;
+            const { peerId, peerName } = payload;
             if (peerId === myId.current) return;
             
+            setPeerNames(prev => ({ ...prev, [peerId]: peerName || 'Kid' }));
+
             // A new peer joined, let's create a connection and send an offer
             const pc = createPeerConnection(peerId, stream, channel);
             const offer = await pc.createOffer();
@@ -52,12 +64,16 @@ export function useAudioChat(roomCode: string | null) {
             channel.send({
               type: 'broadcast',
               event: 'signal',
-              payload: { target: peerId, sender: myId.current, signal: { type: 'offer', sdp: offer } }
+              payload: { target: peerId, sender: myId.current, senderName: username, signal: { type: 'offer', sdp: offer } }
             });
           })
           .on('broadcast', { event: 'signal' }, async ({ payload }) => {
-            const { target, sender, signal } = payload;
+            const { target, sender, senderName, signal } = payload;
             if (target !== myId.current) return;
+
+            if (senderName) {
+              setPeerNames(prev => ({ ...prev, [sender]: senderName }));
+            }
 
             let pc = peerConnections.current[sender];
             
@@ -72,7 +88,7 @@ export function useAudioChat(roomCode: string | null) {
               channel.send({
                 type: 'broadcast',
                 event: 'signal',
-                payload: { target: sender, sender: myId.current, signal: { type: 'answer', sdp: answer } }
+                payload: { target: sender, sender: myId.current, senderName: username, signal: { type: 'answer', sdp: answer } }
               });
             } else if (signal.type === 'answer') {
               if (pc) {
@@ -83,6 +99,9 @@ export function useAudioChat(roomCode: string | null) {
                 await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
               }
             }
+          })
+          .on('broadcast', { event: 'chat-message' }, ({ payload }) => {
+            setChatMessages(prev => [...prev, payload]);
           })
           .on('broadcast', { event: 'peer-left' }, ({ payload }) => {
             const { peerId } = payload;
@@ -95,7 +114,7 @@ export function useAudioChat(roomCode: string | null) {
               channel.send({
                 type: 'broadcast',
                 event: 'peer-joined',
-                payload: { peerId: myId.current }
+                payload: { peerId: myId.current, peerName: username }
               });
             }
           });
@@ -186,12 +205,35 @@ export function useAudioChat(roomCode: string | null) {
     }
   };
 
+  const sendMessage = (text: string) => {
+    if (!channelRef.current || !isConnected) return;
+    
+    const message: ChatMessage = {
+      id: Math.random().toString(36).substring(2, 9),
+      senderId: myId.current,
+      senderName: username,
+      text,
+      timestamp: Date.now(),
+    };
+
+    channelRef.current.send({
+      type: 'broadcast',
+      event: 'chat-message',
+      payload: message
+    });
+
+    setChatMessages(prev => [...prev, message]);
+  };
+
   return {
     localStream,
     peers,
+    peerNames,
     isMuted,
     toggleMute,
     error,
-    isConnected
+    isConnected,
+    chatMessages,
+    sendMessage
   };
 }
