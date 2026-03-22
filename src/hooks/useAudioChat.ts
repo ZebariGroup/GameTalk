@@ -28,6 +28,9 @@ export interface Reaction {
   id: string;
   emoji: string;
   x: number;
+  type?: 'emoji' | 'sticker';
+  text?: string;
+  rotate?: number;
 }
 
 export function useAudioChat(roomCode: string | null, username: string, role: UserRole = 'kid') {
@@ -48,7 +51,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
   const [isOnline, setIsOnline] = useState(true);
   const [isReconnecting, setIsReconnecting] = useState(false);
 
-  const [activeMinigame, setActiveMinigame] = useState<{ type: string, starter: string } | null>(null);
+  const [activeMinigame, setActiveMinigame] = useState<{ type: string, starter: string, word?: string, guesses?: string[] } | null>(null);
 
   const [myId] = useState(() => Math.random().toString(36).substring(2, 15));
   const myIdRef = useRef(myId);
@@ -346,14 +349,22 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
             setChatMessages(prev => [...prev, payload]);
           })
           .on('broadcast', { event: 'reaction' }, ({ payload }) => {
-            setFloatingReactions(prev => [...prev, { id: Math.random().toString(), emoji: payload.emoji, x: Math.random() * 80 + 10 }]);
+            setFloatingReactions(prev => [...prev, { id: Math.random().toString(), emoji: payload.emoji, x: Math.random() * 80 + 10, type: payload.type, text: payload.text, rotate: Math.random() * 40 - 20 }]);
           })
           .on('broadcast', { event: 'sound' }, ({ payload }) => {
             playSound(payload.soundId);
           })
           .on('broadcast', { event: 'minigame' }, ({ payload }) => {
-            setActiveMinigame({ type: payload.gameType, starter: payload.starter });
-            setTimeout(() => setActiveMinigame(null), 10000); // Hide after 10s
+            if (payload.action === 'start') {
+              setActiveMinigame({ type: payload.gameType, starter: payload.starter, word: payload.word, guesses: [] });
+            } else if (payload.action === 'guess') {
+              setActiveMinigame(prev => {
+                if (!prev || prev.type !== 'word_guess') return prev;
+                return { ...prev, guesses: [...(prev.guesses || []), payload.letter] };
+              });
+            } else if (payload.action === 'end') {
+              setActiveMinigame(null);
+            }
           })
           .on('broadcast', { event: 'peer-left' }, ({ payload }) => {
             const { peerId } = payload;
@@ -466,7 +477,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
     setChatMessages(prev => [...prev, message]);
   };
 
-  const sendReaction = (emoji: string) => {
+  const sendReaction = (emoji: string, type: 'emoji' | 'sticker' = 'emoji', text?: string) => {
     if (!channelRef.current || !isConnected) return;
     if (timeoutUntil && Date.now() < timeoutUntil) return;
 
@@ -476,8 +487,10 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
       return;
     }
 
-    channelRef.current.send({ type: 'broadcast', event: 'reaction', payload: { emoji } });
-    setFloatingReactions(prev => [...prev, { id: Math.random().toString(), emoji, x: Math.random() * 80 + 10 }]);
+    const rotate = Math.random() * 40 - 20;
+
+    channelRef.current.send({ type: 'broadcast', event: 'reaction', payload: { emoji, type, text, rotate } });
+    setFloatingReactions(prev => [...prev, { id: Math.random().toString(), emoji, x: Math.random() * 80 + 10, type, text, rotate }]);
   };
 
   const triggerSound = (soundId: string) => {
@@ -494,11 +507,27 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
     playSound(soundId);
   };
 
-  const triggerMinigame = (gameType: string) => {
+  const triggerMinigame = (gameType: string, action: 'start' | 'guess' | 'end' = 'start', data?: { word?: string, letter?: string }) => {
     if (!channelRef.current || !isConnected) return;
     if (timeoutUntil && Date.now() < timeoutUntil) return;
 
-    channelRef.current.send({ type: 'broadcast', event: 'minigame', payload: { gameType, starter: username } });
+    const payload: { gameType: string, action: string, starter: string, word?: string, letter?: string } = { gameType, action, starter: username };
+    if (action === 'start' && data?.word) payload.word = data.word;
+    if (action === 'guess' && data?.letter) payload.letter = data.letter;
+
+    channelRef.current.send({ type: 'broadcast', event: 'minigame', payload });
+    
+    // Optimistic update for local user
+    if (action === 'start') {
+      setActiveMinigame({ type: gameType, starter: username, word: data?.word, guesses: [] });
+    } else if (action === 'guess') {
+      setActiveMinigame(prev => {
+        if (!prev || prev.type !== 'word_guess') return prev;
+        return { ...prev, guesses: [...(prev.guesses || []), data.letter] };
+      });
+    } else if (action === 'end') {
+      setActiveMinigame(null);
+    }
   };
 
   const removeReaction = (id: string) => {

@@ -23,6 +23,9 @@ export default function Home() {
   const [isMomMode, setIsMomMode] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [showWordInput, setShowWordInput] = useState(false);
+  const [secretWord, setSecretWord] = useState('');
+  const [easterEgg, setEasterEgg] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -60,9 +63,35 @@ export default function Home() {
     isReconnecting
   } = useAudioChat(roomCode, username, role);
 
-  // Scroll to bottom of chat
+  // Scroll to bottom of chat and check for easter eggs
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    
+    // Check latest message for easter eggs
+    if (chatMessages.length > 0) {
+      const lastMsg = chatMessages[chatMessages.length - 1];
+      const text = lastMsg.text.toLowerCase();
+      
+      if (text === 'do a barrel roll') {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setEasterEgg('barrel-roll');
+        setTimeout(() => setEasterEgg(null), 2000);
+      } else if (text === 'earthquake') {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setEasterEgg('shake');
+        setTimeout(() => setEasterEgg(null), 1500);
+      } else if (text === 'matrix') {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setEasterEgg(prev => prev === 'matrix' ? null : 'matrix');
+      } else if (text === 'party') {
+        confetti({ particleCount: 200, spread: 160 });
+      } else if (text === 'poop') {
+        for (let i = 0; i < 20; i++) {
+          setTimeout(() => sendReaction('💩'), i * 100);
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatMessages]);
 
   // Confetti when connected (only for kids)
@@ -141,7 +170,7 @@ export default function Home() {
 
   if (roomCode) {
     return (
-      <div className="min-h-[100dvh] bg-slate-900 text-white flex flex-col md:flex-row items-center justify-center p-4 gap-6 relative overflow-y-auto md:overflow-hidden">
+      <div className={`min-h-[100dvh] bg-slate-900 text-white flex flex-col md:flex-row items-center justify-center p-4 gap-6 relative overflow-y-auto md:overflow-hidden ${easterEgg === 'barrel-roll' ? 'animate-barrel-roll' : ''} ${easterEgg === 'shake' ? 'animate-shake' : ''} ${easterEgg === 'matrix' ? 'matrix-mode' : ''}`}>
         
         {/* Network Status Banners */}
         {!isOnline && (
@@ -200,14 +229,20 @@ export default function Home() {
             {floatingReactions.map(reaction => (
               <motion.div
                 key={reaction.id}
-                initial={{ opacity: 1, y: '100vh', x: `${reaction.x}vw`, scale: 1 }}
-                animate={{ opacity: 0, y: '-10vh', scale: 2 }}
+                initial={{ opacity: 1, y: '100vh', x: `${reaction.x}vw`, scale: reaction.type === 'sticker' ? 0.5 : 1, rotate: reaction.type === 'sticker' ? (reaction.rotate || 0) : 0 }}
+                animate={{ opacity: 0, y: '-10vh', scale: reaction.type === 'sticker' ? 2 : 2 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 3, ease: 'easeOut' }}
-                className="absolute text-6xl"
+                transition={{ duration: reaction.type === 'sticker' ? 4 : 3, ease: 'easeOut' }}
+                className={`absolute ${reaction.type === 'sticker' ? 'z-50' : 'text-6xl z-40'}`}
                 onAnimationComplete={() => removeReaction(reaction.id)}
               >
-                {reaction.emoji}
+                {reaction.type === 'sticker' ? (
+                  <div className="text-5xl md:text-7xl font-black text-white drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)] uppercase tracking-widest" style={{ WebkitTextStroke: '3px black' }}>
+                    {reaction.text} {reaction.emoji}
+                  </div>
+                ) : (
+                  reaction.emoji
+                )}
               </motion.div>
             ))}
           </AnimatePresence>
@@ -248,9 +283,19 @@ export default function Home() {
             <div className="flex justify-center gap-6 flex-wrap">
               {/* Local User (Only show if kid) */}
               {role === 'kid' && (
-                <div className="flex flex-col items-center gap-2">
-                  <div className="w-20 h-20 rounded-full bg-indigo-500 flex items-center justify-center text-3xl shadow-lg border-4 border-indigo-400 relative">
-                    😎
+                <motion.div 
+                  className="flex flex-col items-center gap-2"
+                  animate={easterEgg === 'shake' ? { y: [0, -10, 0, 10, 0], x: [0, -5, 5, 0] } : {}}
+                  transition={{ duration: 0.5, repeat: easterEgg === 'shake' ? Infinity : 0 }}
+                >
+                  <div className="w-20 h-20 rounded-full bg-indigo-500 flex items-center justify-center text-3xl shadow-lg border-4 border-indigo-400 relative overflow-hidden group">
+                    <motion.div 
+                      animate={{ rotate: easterEgg === 'barrel-roll' ? 360 : 0 }} 
+                      transition={{ duration: 1 }}
+                      className="group-hover:scale-125 transition-transform"
+                    >
+                      😎
+                    </motion.div>
                     {isSpeaking && (
                       <div className="absolute -inset-2 rounded-full border-4 border-indigo-400 animate-pulse pointer-events-none" />
                     )}
@@ -261,7 +306,7 @@ export default function Home() {
                     )}
                   </div>
                   <span className="font-bold text-sm text-indigo-300">{username} (You)</span>
-                </div>
+                </motion.div>
               )}
 
               {/* Observer Indicator (Only visible to observer) */}
@@ -280,10 +325,21 @@ export default function Home() {
                 const qualityColor = quality === 'good' ? 'text-emerald-400' : quality === 'fair' ? 'text-amber-400' : 'text-red-400';
                 
                 return (
-                  <div key={id} className="flex flex-col items-center gap-2">
-                    <div className="w-20 h-20 rounded-full bg-emerald-500 flex items-center justify-center text-3xl shadow-lg border-4 border-emerald-400 relative">
+                  <motion.div 
+                    key={id} 
+                    className="flex flex-col items-center gap-2"
+                    animate={easterEgg === 'shake' ? { y: [0, -10, 0, 10, 0], x: [0, 5, -5, 0] } : {}}
+                    transition={{ duration: 0.5, repeat: easterEgg === 'shake' ? Infinity : 0 }}
+                  >
+                    <div className="w-20 h-20 rounded-full bg-emerald-500 flex items-center justify-center text-3xl shadow-lg border-4 border-emerald-400 relative overflow-hidden group">
                       <AudioPlayer stream={stream} volume={peerVolumes[id] ?? 1} />
-                      👾
+                      <motion.div 
+                        animate={{ rotate: easterEgg === 'barrel-roll' ? 360 : 0 }} 
+                        transition={{ duration: 1 }}
+                        className="group-hover:scale-125 transition-transform"
+                      >
+                        👾
+                      </motion.div>
                       <div className="absolute -top-2 -right-2 bg-slate-800 rounded-full p-1 border-2 border-slate-700" title={`Connection: ${quality}`}>
                         <Wifi className={`w-4 h-4 ${qualityColor}`} />
                       </div>
@@ -299,7 +355,7 @@ export default function Home() {
                       className="w-16 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                       title="Volume"
                     />
-                  </div>
+                  </motion.div>
                 );
               })}
             </div>
@@ -370,19 +426,110 @@ export default function Home() {
             </div>
           )}
 
-          <div className="bg-slate-900 p-4 border-b border-slate-700 flex justify-between items-center">
+          <div className="bg-slate-900 p-4 border-b border-slate-700 flex justify-between items-center z-10 relative">
             <h3 className="font-bold text-lg text-slate-200">Fun Zone 💬</h3>
-            <button 
-              onClick={() => triggerMinigame('simon_says')}
-              className="text-xs bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1.5 rounded-lg transition-colors font-bold"
-            >
-              Play Simon Says!
-            </button>
+            {!activeMinigame && (
+              <button 
+                onClick={() => setShowWordInput(!showWordInput)}
+                className="text-xs bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1.5 rounded-lg transition-colors font-bold"
+              >
+                Play Word Guess!
+              </button>
+            )}
+            {activeMinigame?.type === 'word_guess' && activeMinigame.starter === username && (
+              <button 
+                onClick={() => triggerMinigame('word_guess', 'end')}
+                className="text-xs bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg transition-colors font-bold"
+              >
+                End Game
+              </button>
+            )}
           </div>
           
-          {activeMinigame && (
-            <div className="bg-indigo-500/20 border-b border-indigo-500/30 p-3 text-center animate-pulse">
-              <span className="font-bold text-indigo-300">🎮 {activeMinigame.starter} started {activeMinigame.type.replace('_', ' ')}!</span>
+          <AnimatePresence>
+            {showWordInput && !activeMinigame && (
+              <motion.div 
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="bg-slate-800 border-b border-slate-700 p-4 overflow-hidden"
+              >
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={secretWord}
+                    onChange={(e) => setSecretWord(e.target.value.toUpperCase().replace(/[^A-Z]/g, ''))}
+                    placeholder="Enter a secret word..."
+                    maxLength={12}
+                    className="flex-grow bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <button
+                    onClick={() => {
+                      if (secretWord.length > 2) {
+                        triggerMinigame('word_guess', 'start', { word: secretWord });
+                        setShowWordInput(false);
+                        setSecretWord('');
+                      }
+                    }}
+                    disabled={secretWord.length < 3}
+                    className="bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-700 text-white px-4 py-2 rounded-lg font-bold transition-colors"
+                  >
+                    Start
+                  </button>
+                </div>
+                <p className="text-xs text-slate-500 mt-2">Pick a word (3-12 letters). Others will try to guess it!</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {activeMinigame?.type === 'word_guess' && (
+            <div className="bg-indigo-900/40 border-b border-indigo-500/30 p-4 text-center flex flex-col items-center gap-3">
+              <span className="font-bold text-indigo-300 text-sm">
+                🎮 {activeMinigame.starter === username ? 'You are' : `${activeMinigame.starter} is`} hosting Word Guess!
+              </span>
+              
+              <div className="flex gap-2 justify-center flex-wrap">
+                {activeMinigame.word?.split('').map((letter, i) => {
+                  const isRevealed = activeMinigame.guesses?.includes(letter) || activeMinigame.starter === username;
+                  return (
+                    <div key={i} className="w-8 h-10 bg-slate-800 border-b-4 border-indigo-400 rounded-t flex items-center justify-center text-xl font-black text-white">
+                      {isRevealed ? letter : ''}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {activeMinigame.starter !== username && (
+                <div className="flex flex-wrap gap-1 justify-center mt-2 max-w-[280px]">
+                  {'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map(letter => {
+                    const isGuessed = activeMinigame.guesses?.includes(letter);
+                    const isCorrect = activeMinigame.word?.includes(letter);
+                    
+                    let btnClass = "w-7 h-8 rounded text-xs font-bold transition-colors ";
+                    if (!isGuessed) btnClass += "bg-slate-700 hover:bg-indigo-500 text-white cursor-pointer";
+                    else if (isCorrect) btnClass += "bg-emerald-500 text-white opacity-50 cursor-not-allowed";
+                    else btnClass += "bg-slate-800 text-slate-600 cursor-not-allowed";
+
+                    return (
+                      <button 
+                        key={letter}
+                        disabled={isGuessed}
+                        onClick={() => triggerMinigame('word_guess', 'guess', { letter })}
+                        className={btnClass}
+                      >
+                        {letter}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              
+              {/* Win Condition Check */}
+              {activeMinigame.word?.split('').every(l => activeMinigame.guesses?.includes(l)) && (
+                <div className="text-emerald-400 font-black animate-bounce mt-2">
+                  🎉 Word Guessed! 🎉
+                </div>
+              )}
             </div>
           )}
 
@@ -390,24 +537,37 @@ export default function Home() {
           <div className="bg-slate-800/80 p-3 border-b border-slate-700 flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Soundboard</span>
-              <div className="flex gap-2">
-                <button onClick={() => triggerSound('laser')} className="p-2 bg-slate-700 hover:bg-indigo-500 rounded-lg transition-colors text-xl" title="Laser">🔫</button>
-                <button onClick={() => triggerSound('magic')} className="p-2 bg-slate-700 hover:bg-purple-500 rounded-lg transition-colors text-xl" title="Magic">✨</button>
-                <button onClick={() => triggerSound('buzzer')} className="p-2 bg-slate-700 hover:bg-red-500 rounded-lg transition-colors text-xl" title="Buzzer">🚨</button>
-                <button onClick={() => triggerSound('jump')} className="p-2 bg-slate-700 hover:bg-emerald-500 rounded-lg transition-colors text-xl" title="Jump">🦘</button>
-                <button onClick={() => triggerSound('fart')} className="p-2 bg-slate-700 hover:bg-amber-500 rounded-lg transition-colors text-xl" title="Fart">💨</button>
-                <button onClick={() => triggerSound('applause')} className="p-2 bg-slate-700 hover:bg-blue-500 rounded-lg transition-colors text-xl" title="Applause">👏</button>
-                <button onClick={() => triggerSound('trombone')} className="p-2 bg-slate-700 hover:bg-slate-500 rounded-lg transition-colors text-xl" title="Sad Trombone">🎺</button>
+              <div className="flex gap-1.5">
+                <button onClick={() => triggerSound('laser')} className="w-10 h-10 bg-slate-700 hover:bg-indigo-500 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Laser">🔫</button>
+                <button onClick={() => triggerSound('magic')} className="w-10 h-10 bg-slate-700 hover:bg-purple-500 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Magic">✨</button>
+                <button onClick={() => triggerSound('buzzer')} className="w-10 h-10 bg-slate-700 hover:bg-red-500 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Buzzer">🚨</button>
+                <button onClick={() => triggerSound('jump')} className="w-10 h-10 bg-slate-700 hover:bg-emerald-500 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Jump">🦘</button>
+                <button onClick={() => triggerSound('fart')} className="w-10 h-10 bg-slate-700 hover:bg-amber-500 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Fart">💨</button>
+                <button onClick={() => triggerSound('applause')} className="w-10 h-10 bg-slate-700 hover:bg-blue-500 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Applause">👏</button>
+                <button onClick={() => triggerSound('trombone')} className="w-10 h-10 bg-slate-700 hover:bg-slate-500 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Sad Trombone">🎺</button>
               </div>
             </div>
             
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Reactions</span>
+              <div className="flex gap-1.5">
+                <button onClick={() => sendReaction('😂')} className="w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-xl transition-all hover:scale-125 flex items-center justify-center text-2xl">😂</button>
+                <button onClick={() => sendReaction('❤️')} className="w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-xl transition-all hover:scale-125 flex items-center justify-center text-2xl">❤️</button>
+                <button onClick={() => sendReaction('😮')} className="w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-xl transition-all hover:scale-125 flex items-center justify-center text-2xl">😮</button>
+                <button onClick={() => sendReaction('🔥')} className="w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-xl transition-all hover:scale-125 flex items-center justify-center text-2xl">🔥</button>
+                <button onClick={() => sendReaction('💀')} className="w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-xl transition-all hover:scale-125 flex items-center justify-center text-2xl">💀</button>
+                <button onClick={() => sendReaction('💯')} className="w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-xl transition-all hover:scale-125 flex items-center justify-center text-2xl">💯</button>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Stickers</span>
               <div className="flex gap-2">
-                <button onClick={() => sendReaction('😂')} className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-xl hover:scale-110 transform">😂</button>
-                <button onClick={() => sendReaction('❤️')} className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-xl hover:scale-110 transform">❤️</button>
-                <button onClick={() => sendReaction('😮')} className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-xl hover:scale-110 transform">😮</button>
-                <button onClick={() => sendReaction('🔥')} className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-xl hover:scale-110 transform">🔥</button>
+                <button onClick={() => sendReaction('💀', 'sticker', 'BRUH')} className="px-3 py-1 bg-slate-700 hover:bg-indigo-500 hover:text-white rounded-lg transition-colors text-xs font-black tracking-widest text-slate-300">BRUH</button>
+                <button onClick={() => sendReaction('🤨', 'sticker', 'SUS')} className="px-3 py-1 bg-slate-700 hover:bg-red-500 hover:text-white rounded-lg transition-colors text-xs font-black tracking-widest text-slate-300">SUS</button>
+                <button onClick={() => sendReaction('🏆', 'sticker', 'EPIC')} className="px-3 py-1 bg-slate-700 hover:bg-emerald-500 hover:text-white rounded-lg transition-colors text-xs font-black tracking-widest text-slate-300">EPIC</button>
+                <button onClick={() => sendReaction('🤦‍♂️', 'sticker', 'NOOB')} className="px-3 py-1 bg-slate-700 hover:bg-amber-500 hover:text-white rounded-lg transition-colors text-xs font-black tracking-widest text-slate-300">NOOB</button>
+                <button onClick={() => sendReaction('🚽', 'sticker', 'SKIBIDI')} className="px-3 py-1 bg-slate-700 hover:bg-purple-500 hover:text-white rounded-lg transition-colors text-xs font-black tracking-widest text-slate-300">SKIBIDI</button>
               </div>
             </div>
           </div>
