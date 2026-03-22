@@ -1,94 +1,21 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { generateRoomCode } from '@/lib/generateCode';
 import { generateName } from '@/lib/generateName';
 import { useAudioChat, UserRole } from '@/hooks/useAudioChat';
-import { AudioPlayer } from '@/components/AudioPlayer';
-import { VoiceEffect } from '@/lib/audioEffects';
-import { Mic, MicOff, PhoneOff, Users, Copy, Check, Dices, Send, Smile, Eye, Wifi, Palette, Sparkles } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import EmojiPicker, { Theme } from 'emoji-picker-react';
-import confetti from 'canvas-confetti';
 import { supabase } from '@/lib/supabase';
-import Avatar from 'boring-avatars';
-
-const AVATAR_VARIANTS = ['beam', 'marble', 'pixel', 'sunset', 'ring', 'bauhaus'] as const;
-const COLOR_PALETTES = [
-  { name: 'Neon', colors: ['#34d399', '#38bdf8', '#818cf8', '#c084fc', '#fbbf24'] },
-  { name: 'Fire', colors: ['#ef4444', '#f97316', '#f59e0b', '#fbbf24', '#fef08a'] },
-  { name: 'Ocean', colors: ['#0ea5e9', '#0284c7', '#0369a1', '#075985', '#082f49'] },
-  { name: 'Cyberpunk', colors: ['#fdf000', '#ff003c', '#00e6f6', '#05d9e8', '#01012b'] },
-  { name: 'Pastel', colors: ['#fbcfe8', '#bbf7d0', '#bfdbfe', '#ddd6fe', '#f5d0fe'] },
-  { name: 'Forest', colors: ['#14532d', '#166534', '#15803d', '#16a34a', '#22c55e'] },
-  { name: 'Monochrome', colors: ['#0f172a', '#334155', '#64748b', '#94a3b8', '#e2e8f0'] }
-];
+import { Lobby, AVATAR_VARIANTS, COLOR_PALETTES } from '@/components/Lobby';
+import { RoomView } from '@/components/RoomView';
 
 export default function Home() {
   const [roomCode, setRoomCode] = useState<string | null>(null);
-  const [joinCode, setJoinCode] = useState('');
-  const [copied, setCopied] = useState(false);
   const [username, setUsername] = useState('');
-  const [chatInput, setChatInput] = useState('');
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [maxMembers, setMaxMembers] = useState<number>(3);
   const [isMomMode, setIsMomMode] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
-  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
-  const [showWordInput, setShowWordInput] = useState(false);
-  const [secretWord, setSecretWord] = useState('');
-  const [easterEgg, setEasterEgg] = useState<string | null>(null);
-  const [customSound, setCustomSound] = useState<string | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
   const [avatarVariant, setAvatarVariant] = useState<typeof AVATAR_VARIANTS[number]>('beam');
   const [avatarColors, setAvatarColors] = useState<string[]>(COLOR_PALETTES[0].colors);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        const reader = new FileReader();
-        reader.readAsDataURL(audioBlob);
-        reader.onloadend = () => {
-          const base64data = reader.result as string;
-          setCustomSound(base64data);
-        };
-        stream.getTracks().forEach(track => track.stop());
-      };
-
-      mediaRecorder.start();
-      setIsRecording(true);
-      
-      // Auto stop after 3 seconds
-      setTimeout(() => {
-        if (mediaRecorderRef.current?.state === 'recording') {
-          stopRecording();
-        }
-      }, 3000);
-    } catch (err) {
-      console.error('Error accessing microphone for recording:', err);
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-    }
-  };
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setUsername(generateName());
@@ -96,78 +23,11 @@ export default function Home() {
 
   const role: UserRole = isMomMode ? 'observer' : 'kid';
 
-  const { 
-    peers, 
-    peerNames, 
-    peerVolumes,
-    setPeerVolume,
-    peerQuality,
-    isMuted, 
-    toggleMute, 
-    error, 
-    isConnected, 
-    chatMessages, 
-    sendMessage,
-    voiceEffect,
-    setVoiceEffect,
-    sendReaction,
-    triggerSound,
-    triggerMinigame,
-    activeMinigame,
-    floatingReactions,
-    removeReaction,
-    timeoutUntil,
-    timeoutReason,
-    timeLeft,
-    isSpeaking,
-    isOnline,
-    isReconnecting
-  } = useAudioChat(roomCode, username, role, avatarVariant, avatarColors);
+  const audioChat = useAudioChat(roomCode, username, role, avatarVariant, avatarColors);
 
-  const chatEndRef = useRef<HTMLDivElement>(null);
-
-  // Scroll to bottom of chat and check for easter eggs
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    
-    // Check latest message for easter eggs
-    if (chatMessages.length > 0) {
-      const lastMsg = chatMessages[chatMessages.length - 1];
-      const text = lastMsg.text.toLowerCase();
-      
-      if (text === 'do a barrel roll') {
-        setEasterEgg('barrel-roll');
-        setTimeout(() => setEasterEgg(null), 2000);
-      } else if (text === 'earthquake') {
-        setEasterEgg('shake');
-        setTimeout(() => setEasterEgg(null), 1500);
-      } else if (text === 'matrix') {
-        setEasterEgg(prev => prev === 'matrix' ? null : 'matrix');
-      } else if (text === 'party') {
-        confetti({ particleCount: 200, spread: 160 });
-      } else if (text === 'poop') {
-        for (let i = 0; i < 20; i++) {
-          setTimeout(() => sendReaction('💩'), i * 100);
-        }
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatMessages]);
-
-  // Confetti when connected (only for kids)
-  useEffect(() => {
-    if (isConnected && role === 'kid') {
-      confetti({
-        particleCount: 100,
-        spread: 70,
-        origin: { y: 0.6 },
-        colors: ['#34d399', '#38bdf8', '#818cf8', '#c084fc']
-      });
-    }
-  }, [isConnected, role]);
-
-  const handleCreateRoom = async () => {
+  const handleCreateRoom = async (maxMembers: number) => {
     setIsCreating(true);
+    setError(null);
     const code = generateRoomCode();
     
     // Calculate expiration time (24 hours from now)
@@ -175,687 +35,65 @@ export default function Home() {
     expiresAt.setHours(expiresAt.getHours() + 24);
     
     // Save room to DB with max members and expiration
-    const { error } = await supabase.from('rooms').insert([
+    const { error: dbError } = await supabase.from('rooms').insert([
       { code, max_members: maxMembers, expires_at: expiresAt.toISOString() }
     ]);
 
     setIsCreating(false);
 
-    if (error) {
-      alert("Failed to create room. Please try again.");
-      console.error(error);
+    if (dbError) {
+      setError("Failed to create room. Please try again.");
+      console.error(dbError);
       return;
     }
 
     setRoomCode(code);
   };
 
-  const handleJoinRoom = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (joinCode.trim()) {
-      setRoomCode(joinCode.trim());
-    }
+  const handleJoinRoom = (code: string) => {
+    setRoomCode(code);
   };
 
   const handleLeaveRoom = () => {
-    setShowLeaveConfirm(true);
-  };
-
-  const confirmLeaveRoom = () => {
     setRoomCode(null);
-    setJoinCode('');
     setIsMomMode(false);
-    setShowLeaveConfirm(false);
   };
-
-  const copyCode = () => {
-    if (roomCode) {
-      navigator.clipboard.writeText(roomCode);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (chatInput.trim()) {
-      sendMessage(chatInput.trim());
-      setChatInput('');
-      setShowEmojiPicker(false);
-    }
-  };
-
-  const onEmojiClick = (emojiObject: { emoji: string }) => {
-    setChatInput(prev => prev + emojiObject.emoji);
-  };
-
-  // Filter out observers from the visible peers list
-  const visiblePeers = Object.entries(peers).filter(([id]) => peerNames[id]?.role === 'kid');
 
   if (roomCode) {
     return (
-      <div className={`min-h-[100dvh] bg-slate-900 text-white flex flex-col md:flex-row items-center justify-center p-4 gap-6 relative overflow-y-auto md:overflow-hidden ${easterEgg === 'barrel-roll' ? 'animate-barrel-roll' : ''} ${easterEgg === 'shake' ? 'animate-shake' : ''} ${easterEgg === 'matrix' ? 'matrix-mode' : ''}`}>
-        
-        {/* Network Status Banners */}
-        {!isOnline && (
-          <div className="absolute top-0 left-0 right-0 bg-red-500 text-white text-center py-2 z-[200] font-bold animate-pulse shadow-lg">
-            ⚠️ You are offline. Waiting for internet connection...
-          </div>
-        )}
-        {isOnline && isReconnecting && (
-          <div className="absolute top-0 left-0 right-0 bg-amber-500 text-white text-center py-2 z-[200] font-bold animate-pulse shadow-lg">
-            🔄 Reconnecting to chat...
-          </div>
-        )}
-
-        {/* Leave Confirmation Modal */}
-        <AnimatePresence>
-          {showLeaveConfirm && (
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
-            >
-              <motion.div 
-                initial={{ scale: 0.9, y: 20 }}
-                animate={{ scale: 1, y: 0 }}
-                exit={{ scale: 0.9, y: 20 }}
-                className="bg-slate-800 p-8 rounded-3xl shadow-2xl max-w-sm w-full border border-slate-700 text-center"
-              >
-                <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <PhoneOff className="w-10 h-10 text-red-500" />
-                </div>
-                <h3 className="text-2xl font-black text-white mb-2">Leaving so soon?</h3>
-                <p className="text-slate-400 mb-8">Are you sure you want to leave the chat room?</p>
-                <div className="flex gap-4">
-                  <button 
-                    onClick={() => setShowLeaveConfirm(false)}
-                    className="flex-1 py-3 px-4 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold transition-colors"
-                  >
-                    No, stay
-                  </button>
-                  <button 
-                    onClick={confirmLeaveRoom}
-                    className="flex-1 py-3 px-4 bg-red-500 hover:bg-red-600 text-white rounded-xl font-bold transition-colors shadow-lg shadow-red-500/20"
-                  >
-                    Yes, leave
-                  </button>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Floating Reactions Layer */}
-        <div className="pointer-events-none fixed inset-0 z-50 overflow-hidden">
-          <AnimatePresence>
-            {floatingReactions.map(reaction => (
-              <motion.div
-                key={reaction.id}
-                initial={{ opacity: 1, y: '100vh', x: `${reaction.x}vw`, scale: reaction.type === 'sticker' ? 0.5 : 1, rotate: reaction.type === 'sticker' ? (reaction.rotate || 0) : 0 }}
-                animate={{ opacity: 0, y: '-10vh', scale: reaction.type === 'sticker' ? 2 : 2 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: reaction.type === 'sticker' ? 4 : 3, ease: 'easeOut' }}
-                className={`absolute ${reaction.type === 'sticker' ? 'z-50' : 'text-6xl z-40'}`}
-                onAnimationComplete={() => removeReaction(reaction.id)}
-              >
-                {reaction.type === 'sticker' ? (
-                  <div className="text-5xl md:text-7xl font-black text-white drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)] uppercase tracking-widest" style={{ WebkitTextStroke: '3px black' }}>
-                    {reaction.text} {reaction.emoji}
-                  </div>
-                ) : (
-                  reaction.emoji
-                )}
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </div>
-
-        {/* Left Column: Audio & Controls */}
-        <motion.div 
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          className="bg-slate-800 p-6 md:p-8 rounded-3xl shadow-2xl w-full max-w-md text-center border border-slate-700 flex flex-col h-[60vh] md:h-[85vh] shrink-0"
-        >
-          <h2 className="text-2xl font-bold mb-2 text-slate-300">Room Code</h2>
-          <div 
-            onClick={copyCode}
-            className="bg-slate-900 p-4 rounded-xl text-3xl font-black text-emerald-400 mb-4 cursor-pointer hover:bg-slate-950 transition-colors flex items-center justify-center gap-3 group"
-          >
-            {roomCode}
-            {copied ? <Check className="w-6 h-6 text-emerald-400" /> : <Copy className="w-6 h-6 text-slate-500 group-hover:text-emerald-400 transition-colors" />}
-          </div>
-
-          {error && (
-            <div className="bg-red-500/20 text-red-400 p-3 rounded-lg mb-4 text-sm">
-              {error}
-            </div>
-          )}
-
-          <div className="flex items-center justify-center gap-2 mb-4 text-slate-400">
-            <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500 animate-pulse'}`} />
-            {isConnected ? 'Connected' : 'Connecting...'}
-          </div>
-
-          <div className="bg-slate-900 rounded-2xl p-6 mb-4 flex-grow overflow-y-auto">
-            <div className="flex items-center justify-center gap-3 mb-6 text-slate-300">
-              <Users className="w-5 h-5" />
-              <span className="font-medium">Kids in Chat: {visiblePeers.length + (role === 'kid' ? 1 : 0)}</span>
-            </div>
-            
-            <div className="flex justify-center gap-6 flex-wrap">
-              {/* Local User (Only show if kid) */}
-              {role === 'kid' && (
-                <motion.div 
-                  className="flex flex-col items-center gap-2"
-                  animate={easterEgg === 'shake' ? { y: [0, -10, 0, 10, 0], x: [0, -5, 5, 0] } : {}}
-                  transition={{ duration: 0.5, repeat: easterEgg === 'shake' ? Infinity : 0 }}
-                >
-                  <div className="w-20 h-20 rounded-full flex items-center justify-center shadow-lg border-4 border-indigo-400 relative overflow-hidden group bg-slate-800">
-                    <motion.div 
-                      animate={{ rotate: easterEgg === 'barrel-roll' ? 360 : 0 }} 
-                      transition={{ duration: 1 }}
-                      className="group-hover:scale-110 transition-transform w-full h-full"
-                    >
-                      <Avatar
-                        size={80}
-                        name={username}
-                        variant={avatarVariant}
-                        colors={avatarColors}
-                      />
-                    </motion.div>
-                    {isSpeaking && (
-                      <div className="absolute -inset-2 rounded-full border-4 border-indigo-400 animate-pulse pointer-events-none" />
-                    )}
-                    {isMuted && (
-                      <div className="absolute -bottom-2 -right-2 bg-red-500 rounded-full p-1.5 border-2 border-slate-900 z-10">
-                        <MicOff className="w-4 h-4 text-white" />
-                      </div>
-                    )}
-                  </div>
-                  <span className="font-bold text-sm text-indigo-300">{username} (You)</span>
-                </motion.div>
-              )}
-
-              {/* Observer Indicator (Only visible to observer) */}
-              {role === 'observer' && (
-                <div className="flex flex-col items-center gap-2">
-                  <div className="w-20 h-20 rounded-full bg-slate-700 flex items-center justify-center text-3xl shadow-lg border-4 border-slate-500 relative">
-                    <Eye className="w-8 h-8 text-slate-400" />
-                  </div>
-                  <span className="font-bold text-sm text-slate-400">Invisible Observer</span>
-                </div>
-              )}
-              
-              {/* Remote Peers (Only Kids) */}
-              {visiblePeers.map(([id, stream]) => {
-                const quality = peerQuality[id] || 'good';
-                const qualityColor = quality === 'good' ? 'text-emerald-400' : quality === 'fair' ? 'text-amber-400' : 'text-red-400';
-                const peerName = peerNames[id]?.name || 'Kid';
-                
-                return (
-                  <motion.div 
-                    key={id} 
-                    className="flex flex-col items-center gap-2"
-                    animate={easterEgg === 'shake' ? { y: [0, -10, 0, 10, 0], x: [0, 5, -5, 0] } : {}}
-                    transition={{ duration: 0.5, repeat: easterEgg === 'shake' ? Infinity : 0 }}
-                  >
-                    <div className="w-20 h-20 rounded-full flex items-center justify-center shadow-lg border-4 border-emerald-400 relative overflow-hidden group bg-slate-800">
-                      <AudioPlayer stream={stream} volume={peerVolumes[id] ?? 1} />
-                      <motion.div 
-                        animate={{ rotate: easterEgg === 'barrel-roll' ? 360 : 0 }} 
-                        transition={{ duration: 1 }}
-                        className="group-hover:scale-110 transition-transform w-full h-full"
-                      >
-                        <Avatar
-                          size={80}
-                          name={peerName}
-                          variant={peerNames[id]?.avatarVariant || 'beam'}
-                          colors={peerNames[id]?.avatarColors || COLOR_PALETTES[0].colors}
-                        />
-                      </motion.div>
-                      <div className="absolute -top-2 -right-2 bg-slate-800 rounded-full p-1 border-2 border-slate-700 z-10" title={`Connection: ${quality}`}>
-                        <Wifi className={`w-4 h-4 ${qualityColor}`} />
-                      </div>
-                    </div>
-                    <span className="font-bold text-sm text-emerald-300">{peerName}</span>
-                    <input 
-                      type="range" 
-                      min="0" 
-                      max="1" 
-                      step="0.01" 
-                      value={peerVolumes[id] ?? 1} 
-                      onChange={(e) => setPeerVolume(id, parseFloat(e.target.value))}
-                      className="w-16 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                      title="Volume"
-                    />
-                  </motion.div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Voice Changer (Only for kids) */}
-          {role === 'kid' && (
-            <div className="mb-6">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Voice Changer</p>
-              <div className="flex justify-center gap-2 flex-wrap">
-                {(['none', 'robot', 'cave', 'radio', 'chipmunk', 'monster', 'alien'] as VoiceEffect[]).map((effect) => (
-                  <button
-                    key={effect}
-                    onClick={() => setVoiceEffect(effect)}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                      voiceEffect === effect 
-                        ? 'bg-indigo-500 text-white' 
-                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                    }`}
-                  >
-                    {effect === 'none' ? 'Normal' : effect.charAt(0).toUpperCase() + effect.slice(1)}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="flex justify-center gap-4 mt-auto">
-            {role === 'kid' && (
-              <button
-                onClick={toggleMute}
-                className={`p-4 rounded-full transition-colors ${
-                  isMuted 
-                    ? 'bg-red-500 hover:bg-red-600 text-white' 
-                    : 'bg-slate-700 hover:bg-slate-600 text-white'
-                }`}
-              >
-                {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
-              </button>
-            )}
-            <button
-              onClick={handleLeaveRoom}
-              className="p-4 rounded-full bg-red-500 hover:bg-red-600 text-white transition-colors"
-            >
-              <PhoneOff className="w-6 h-6" />
-            </button>
-          </div>
-        </motion.div>
-
-        {/* Right Column: Text Chat & Fun Zone */}
-        <motion.div 
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          className="bg-slate-800 rounded-3xl shadow-2xl w-full max-w-md border border-slate-700 flex flex-col h-[60vh] md:h-[85vh] overflow-hidden relative shrink-0"
-        >
-          {timeoutUntil && (
-            <div className="absolute inset-0 z-50 bg-slate-900/95 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center">
-              <div className="text-7xl mb-6 animate-bounce">🚨</div>
-              <h2 className="text-4xl font-black text-red-500 mb-4 tracking-wider">TIMEOUT!</h2>
-              <p className="text-slate-300 text-xl mb-6">
-                You are in timeout for<br/>
-                <span className="font-bold text-white text-2xl block mt-2">{timeoutReason}</span>
-              </p>
-              <div className="text-6xl font-black font-mono text-amber-400 drop-shadow-[0_0_15px_rgba(251,191,36,0.5)]">
-                {timeLeft}s
-              </div>
-              <p className="text-slate-500 mt-8 text-sm">Think about what you&apos;ve done... 🤫</p>
-            </div>
-          )}
-
-          <div className="bg-slate-900 p-4 border-b border-slate-700 flex justify-between items-center z-10 relative">
-            <h3 className="font-bold text-lg text-slate-200">Fun Zone 💬</h3>
-            {!activeMinigame && (
-              <button 
-                onClick={() => setShowWordInput(!showWordInput)}
-                className="text-xs bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1.5 rounded-lg transition-colors font-bold"
-              >
-                Play Word Guess!
-              </button>
-            )}
-            {activeMinigame?.type === 'word_guess' && activeMinigame.starter === username && (
-              <button 
-                onClick={() => triggerMinigame('word_guess', 'end')}
-                className="text-xs bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg transition-colors font-bold"
-              >
-                End Game
-              </button>
-            )}
-          </div>
-          
-          <AnimatePresence>
-            {showWordInput && !activeMinigame && (
-              <motion.div 
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className="bg-slate-800 border-b border-slate-700 p-4 overflow-hidden"
-              >
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={secretWord}
-                    onChange={(e) => setSecretWord(e.target.value.toUpperCase().replace(/[^A-Z]/g, ''))}
-                    placeholder="Enter a secret word..."
-                    maxLength={12}
-                    className="flex-grow bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                  <button
-                    onClick={() => {
-                      if (secretWord.length > 2) {
-                        triggerMinigame('word_guess', 'start', { word: secretWord });
-                        setShowWordInput(false);
-                        setSecretWord('');
-                      }
-                    }}
-                    disabled={secretWord.length < 3}
-                    className="bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-700 text-white px-4 py-2 rounded-lg font-bold transition-colors"
-                  >
-                    Start
-                  </button>
-                </div>
-                <p className="text-xs text-slate-500 mt-2">Pick a word (3-12 letters). Others will try to guess it!</p>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {activeMinigame?.type === 'word_guess' && (
-            <div className="bg-indigo-900/40 border-b border-indigo-500/30 p-4 text-center flex flex-col items-center gap-3">
-              <span className="font-bold text-indigo-300 text-sm">
-                🎮 {activeMinigame.starter === username ? 'You are' : `${activeMinigame.starter} is`} hosting Word Guess!
-              </span>
-              
-              <div className="flex gap-2 justify-center flex-wrap">
-                {activeMinigame.word?.split('').map((letter, i) => {
-                  const isRevealed = activeMinigame.guesses?.includes(letter) || activeMinigame.starter === username;
-                  return (
-                    <div key={i} className="w-8 h-10 bg-slate-800 border-b-4 border-indigo-400 rounded-t flex items-center justify-center text-xl font-black text-white">
-                      {isRevealed ? letter : ''}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {activeMinigame.starter !== username && (
-                <div className="flex flex-wrap gap-1 justify-center mt-2 max-w-[280px]">
-                  {'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map(letter => {
-                    const isGuessed = activeMinigame.guesses?.includes(letter);
-                    const isCorrect = activeMinigame.word?.includes(letter);
-                    
-                    let btnClass = "w-7 h-8 rounded text-xs font-bold transition-colors ";
-                    if (!isGuessed) btnClass += "bg-slate-700 hover:bg-indigo-500 text-white cursor-pointer";
-                    else if (isCorrect) btnClass += "bg-emerald-500 text-white opacity-50 cursor-not-allowed";
-                    else btnClass += "bg-slate-800 text-slate-600 cursor-not-allowed";
-
-                    return (
-                      <button 
-                        key={letter}
-                        disabled={isGuessed}
-                        onClick={() => triggerMinigame('word_guess', 'guess', { letter })}
-                        className={btnClass}
-                      >
-                        {letter}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-              
-              {/* Win Condition Check */}
-              {activeMinigame.word?.split('').every(l => activeMinigame.guesses?.includes(l)) && (
-                <div className="text-emerald-400 font-black animate-bounce mt-2">
-                  🎉 Word Guessed! 🎉
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Soundboard & Reactions */}
-          <div className="bg-slate-800/80 p-3 border-b border-slate-700 flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Classic Sounds</span>
-              <div className="flex gap-1.5">
-                <button onClick={() => triggerSound('laser')} className="w-10 h-10 bg-slate-700 hover:bg-indigo-500 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Laser">🔫</button>
-                <button onClick={() => triggerSound('magic')} className="w-10 h-10 bg-slate-700 hover:bg-purple-500 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Magic">✨</button>
-                <button onClick={() => triggerSound('buzzer')} className="w-10 h-10 bg-slate-700 hover:bg-red-500 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Buzzer">🚨</button>
-                <button onClick={() => triggerSound('fart')} className="w-10 h-10 bg-slate-700 hover:bg-amber-500 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Fart">💨</button>
-                <button onClick={() => triggerSound('applause')} className="w-10 h-10 bg-slate-700 hover:bg-blue-500 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Applause">👏</button>
-                <button onClick={() => triggerSound('trombone')} className="w-10 h-10 bg-slate-700 hover:bg-slate-500 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Sad Trombone">🎺</button>
-                {customSound ? (
-                  <button onClick={() => triggerSound('custom', customSound)} className="w-10 h-10 bg-emerald-500 hover:bg-emerald-400 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Play Custom Sound">🎵</button>
-                ) : (
-                  <button 
-                    onClick={isRecording ? stopRecording : startRecording} 
-                    className={`w-10 h-10 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-slate-700 hover:bg-red-500'}`} 
-                    title={isRecording ? "Stop Recording" : "Record Custom Sound (3s)"}
-                  >
-                    🎤
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Game Sounds</span>
-              <div className="flex gap-1.5">
-                <button onClick={() => triggerSound('mc_break')} className="w-10 h-10 bg-slate-700 hover:bg-green-600 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Block Break">⛏️</button>
-                <button onClick={() => triggerSound('fn_shield')} className="w-10 h-10 bg-slate-700 hover:bg-blue-400 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Shield Pop">🛡️</button>
-                <button onClick={() => triggerSound('mario_coin')} className="w-10 h-10 bg-slate-700 hover:bg-yellow-400 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Coin">🪙</button>
-                <button onClick={() => triggerSound('roblox_oof')} className="w-10 h-10 bg-slate-700 hover:bg-red-500 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Oof">🤕</button>
-                <button onClick={() => triggerSound('jump')} className="w-10 h-10 bg-slate-700 hover:bg-emerald-500 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Jump">🦘</button>
-              </div>
-            </div>
-            
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Reactions</span>
-              <div className="flex gap-1.5">
-                <button onClick={() => sendReaction('😂')} className="w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-xl transition-all hover:scale-125 flex items-center justify-center text-2xl">😂</button>
-                <button onClick={() => sendReaction('❤️')} className="w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-xl transition-all hover:scale-125 flex items-center justify-center text-2xl">❤️</button>
-                <button onClick={() => sendReaction('😮')} className="w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-xl transition-all hover:scale-125 flex items-center justify-center text-2xl">😮</button>
-                <button onClick={() => sendReaction('🔥')} className="w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-xl transition-all hover:scale-125 flex items-center justify-center text-2xl">🔥</button>
-                <button onClick={() => sendReaction('💀')} className="w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-xl transition-all hover:scale-125 flex items-center justify-center text-2xl">💀</button>
-                <button onClick={() => sendReaction('💯')} className="w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-xl transition-all hover:scale-125 flex items-center justify-center text-2xl">💯</button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Stickers</span>
-              <div className="flex gap-2">
-                <button onClick={() => sendReaction('💀', 'sticker', 'BRUH')} className="px-3 py-1 bg-slate-700 hover:bg-indigo-500 hover:text-white rounded-lg transition-colors text-xs font-black tracking-widest text-slate-300">BRUH</button>
-                <button onClick={() => sendReaction('🤨', 'sticker', 'SUS')} className="px-3 py-1 bg-slate-700 hover:bg-red-500 hover:text-white rounded-lg transition-colors text-xs font-black tracking-widest text-slate-300">SUS</button>
-                <button onClick={() => sendReaction('🏆', 'sticker', 'EPIC')} className="px-3 py-1 bg-slate-700 hover:bg-emerald-500 hover:text-white rounded-lg transition-colors text-xs font-black tracking-widest text-slate-300">EPIC</button>
-                <button onClick={() => sendReaction('🤦‍♂️', 'sticker', 'NOOB')} className="px-3 py-1 bg-slate-700 hover:bg-amber-500 hover:text-white rounded-lg transition-colors text-xs font-black tracking-widest text-slate-300">NOOB</button>
-                <button onClick={() => sendReaction('🚽', 'sticker', 'SKIBIDI')} className="px-3 py-1 bg-slate-700 hover:bg-purple-500 hover:text-white rounded-lg transition-colors text-xs font-black tracking-widest text-slate-300">SKIBIDI</button>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex-grow p-4 overflow-y-auto space-y-4 bg-slate-800/50">
-            {chatMessages.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-slate-500 text-sm italic">
-                No messages yet. Say hi! 👋
-              </div>
-            ) : (
-              chatMessages.map((msg) => {
-                const isMe = msg.senderName === username;
-                return (
-                  <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                    <span className="text-xs text-slate-400 mb-1 px-2">{msg.senderName}</span>
-                    <div className={`px-4 py-2 rounded-2xl max-w-[80%] ${isMe ? 'bg-indigo-500 text-white rounded-tr-none' : 'bg-slate-700 text-slate-200 rounded-tl-none'}`}>
-                      {msg.text}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-            <div ref={chatEndRef} />
-          </div>
-
-          <form onSubmit={handleSendMessage} className="p-4 bg-slate-900 border-t border-slate-700 flex gap-2 relative z-40">
-            <button 
-              type="button"
-              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-              className="p-3 bg-slate-800 hover:bg-slate-700 rounded-xl text-slate-400 hover:text-yellow-400 transition-colors"
-            >
-              <Smile className="w-6 h-6" />
-            </button>
-            
-            <AnimatePresence>
-              {showEmojiPicker && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 10 }}
-                  className="absolute bottom-20 left-4 z-50"
-                >
-                  <EmojiPicker onEmojiClick={onEmojiClick} theme={Theme.DARK} />
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <input
-              type="text"
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              placeholder="Type a message..."
-              className="flex-grow bg-slate-800 border border-slate-700 rounded-xl px-4 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            <button 
-              type="submit"
-              disabled={!chatInput.trim()}
-              className="p-3 bg-indigo-500 hover:bg-indigo-600 disabled:bg-slate-800 disabled:text-slate-600 text-white rounded-xl transition-colors"
-            >
-              <Send className="w-6 h-6" />
-            </button>
-          </form>
-        </motion.div>
-      </div>
+      <RoomView
+        roomCode={roomCode}
+        username={username}
+        role={role}
+        avatarVariant={avatarVariant}
+        avatarColors={avatarColors}
+        onLeaveRoom={handleLeaveRoom}
+        {...audioChat}
+      />
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-4">
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="max-w-md w-full"
-      >
-        <div className="text-center mb-12 flex flex-col items-center">
-          <h1 className="sr-only">Minevine - Safe Audio Chat for Kids Gaming</h1>
-          <img src="/logo.png" alt="Minevine Logo" className="h-24 md:h-32 mb-4 drop-shadow-[0_0_15px_rgba(52,211,153,0.3)]" />
-          <h2 className="text-slate-400 text-lg font-medium">Fun, safe audio chat for gaming.</h2>
+    <div className="relative">
+      {error && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-red-500 text-white px-6 py-3 rounded-xl shadow-lg z-50 font-bold flex items-center gap-2">
+          <span>⚠️</span> {error}
+          <button onClick={() => setError(null)} className="ml-4 text-red-200 hover:text-white">✕</button>
         </div>
-
-        <div className="bg-slate-800 p-8 rounded-3xl shadow-2xl border border-slate-700 space-y-8">
-          
-          {/* Profile Builder Section */}
-          <div className="bg-slate-900 p-6 rounded-2xl border border-slate-700 text-center space-y-6">
-            <div className="flex justify-center relative">
-              <motion.div
-                key={`${avatarVariant}-${avatarColors.join('')}-${username}`}
-                initial={{ scale: 0.8, rotate: -10 }}
-                animate={{ scale: 1, rotate: 0 }}
-                className="w-32 h-32 rounded-full overflow-hidden border-4 border-indigo-500 shadow-[0_0_20px_rgba(99,102,241,0.4)]"
-              >
-                <Avatar
-                  size={128}
-                  name={username}
-                  variant={avatarVariant}
-                  colors={avatarColors}
-                />
-              </motion.div>
-              <button 
-                onClick={() => {
-                  setAvatarVariant(AVATAR_VARIANTS[Math.floor(Math.random() * AVATAR_VARIANTS.length)]);
-                  setAvatarColors(COLOR_PALETTES[Math.floor(Math.random() * COLOR_PALETTES.length)].colors);
-                }}
-                className="absolute -bottom-2 bg-indigo-500 hover:bg-indigo-400 text-white p-2 rounded-full shadow-lg transition-transform hover:scale-110"
-                title="Randomize Avatar!"
-              >
-                <Sparkles className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-center gap-3 mb-1">
-                <span className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400">{username}</span>
-                <button 
-                  onClick={() => setUsername(generateName())}
-                  className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 transition-colors"
-                  title="Roll new name"
-                >
-                  <Dices className="w-5 h-5" />
-                </button>
-              </div>
-              <p className="text-xs text-slate-500 uppercase tracking-widest font-bold">Your Secret Identity</p>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="flex items-center justify-between bg-slate-900 p-3 rounded-xl border border-slate-700">
-              <label htmlFor="maxMembers" className="text-sm font-medium text-slate-300">
-                Max Kids Allowed:
-              </label>
-              <select
-                id="maxMembers"
-                value={maxMembers}
-                onChange={(e) => setMaxMembers(Number(e.target.value))}
-                className="bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              >
-                {[2, 3, 4, 5, 6, 10].map(num => (
-                  <option key={num} value={num}>{num} Kids</option>
-                ))}
-              </select>
-            </div>
-            <button
-              onClick={handleCreateRoom}
-              disabled={isCreating}
-              className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-500/50 text-white font-bold py-4 px-6 rounded-xl transition-colors text-lg shadow-lg shadow-emerald-500/20"
-            >
-              {isCreating ? 'Creating...' : 'Create New Chat'}
-            </button>
-          </div>
-
-          <div className="relative flex items-center py-2">
-            <div className="flex-grow border-t border-slate-700"></div>
-            <span className="flex-shrink-0 mx-4 text-slate-500 font-medium">OR</span>
-            <div className="flex-grow border-t border-slate-700"></div>
-          </div>
-
-          <form onSubmit={handleJoinRoom} className="space-y-4">
-            <div>
-              <label htmlFor="code" className="block text-sm font-medium text-slate-400 mb-2">
-                Have a code? Enter it here:
-              </label>
-              <input
-                id="code"
-                type="text"
-                value={joinCode}
-                onChange={(e) => setJoinCode(e.target.value)}
-                placeholder="e.g. BlueMonkeyHappy-42"
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-4 text-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all mb-3"
-              />
-              
-              <label className="flex items-center gap-2 cursor-pointer group">
-                <input 
-                  type="checkbox" 
-                  checked={isMomMode}
-                  onChange={(e) => setIsMomMode(e.target.checked)}
-                  className="w-4 h-4 rounded border-slate-600 text-indigo-500 focus:ring-indigo-500 bg-slate-900"
-                />
-                <span className="text-sm text-slate-400 group-hover:text-slate-300 transition-colors flex items-center gap-1">
-                  <Eye className="w-4 h-4" /> Mom Mode (Join Invisibly)
-                </span>
-              </label>
-            </div>
-            <button
-              type="submit"
-              disabled={!joinCode.trim()}
-              className="w-full bg-indigo-500 hover:bg-indigo-600 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold py-4 px-6 rounded-xl transition-colors text-lg shadow-lg shadow-indigo-500/20 disabled:shadow-none"
-            >
-              Join Chat
-            </button>
-          </form>
-        </div>
-      </motion.div>
+      )}
+      <Lobby
+        onCreateRoom={handleCreateRoom}
+        onJoinRoom={handleJoinRoom}
+        isCreating={isCreating}
+        username={username}
+        setUsername={setUsername}
+        avatarVariant={avatarVariant}
+        setAvatarVariant={setAvatarVariant}
+        avatarColors={avatarColors}
+        setAvatarColors={setAvatarColors}
+        isMomMode={isMomMode}
+        setIsMomMode={setIsMomMode}
+      />
     </div>
   );
 }

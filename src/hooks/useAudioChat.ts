@@ -11,6 +11,12 @@ const ICE_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    // In production, you should use a paid TURN service (e.g. Twilio, Metered)
+    { 
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
   ],
 };
 
@@ -57,6 +63,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
   const myIdRef = useRef(myId);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const peerConnections = useRef<{ [id: string]: RTCPeerConnection }>({});
+  const disconnectTimers = useRef<{ [id: string]: NodeJS.Timeout }>({});
   const actionHistory = useRef<{ type: 'text' | 'sound' | 'reaction', timestamp: number, content?: string }[]>([]);
   const timeoutCount = useRef(0);
 
@@ -94,6 +101,10 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
   }, [isConnected, role, username]);
 
   const removePeer = (peerId: string) => {
+    if (disconnectTimers.current[peerId]) {
+      clearTimeout(disconnectTimers.current[peerId]);
+      delete disconnectTimers.current[peerId];
+    }
     if (peerConnections.current[peerId]) {
       peerConnections.current[peerId].close();
       delete peerConnections.current[peerId];
@@ -152,7 +163,10 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
         }
       } else if (pc.iceConnectionState === 'disconnected') {
         // Don't remove immediately, give it a chance to recover (7 seconds)
-        setTimeout(() => {
+        if (disconnectTimers.current[peerId]) {
+          clearTimeout(disconnectTimers.current[peerId]);
+        }
+        disconnectTimers.current[peerId] = setTimeout(() => {
           if (peerConnections.current[peerId]?.iceConnectionState === 'disconnected') {
             removePeer(peerId);
           }
@@ -235,6 +249,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
   
   const originalStreamRef = useRef<MediaStream | null>(null);
   const processedStreamRef = useRef<MediaStream | null>(null);
+  const effectCleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (!roomCode) return;
@@ -276,8 +291,9 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
           if (!mounted) return;
           
           originalStreamRef.current = stream;
-          const processedStream = applyVoiceEffect(stream, voiceEffect);
+          const { stream: processedStream, cleanup } = applyVoiceEffect(stream, voiceEffect);
           processedStreamRef.current = processedStream;
+          effectCleanupRef.current = cleanup;
           
           setLocalStream(stream); // keep original for muting
         }
@@ -370,8 +386,11 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
           })
           .on('broadcast', { event: 'sound' }, ({ payload }) => {
             if (payload.soundId === 'custom' && payload.audioData) {
-              const audio = new Audio(payload.audioData);
-              audio.play().catch(e => console.error("Error playing custom sound:", e));
+              // Limit custom audio data size (approx 500KB)
+              if (typeof payload.audioData === 'string' && payload.audioData.length < 500000) {
+                const audio = new Audio(payload.audioData);
+                audio.play().catch(e => console.error("Error playing custom sound:", e));
+              }
             } else {
               playSound(payload.soundId);
             }
@@ -435,9 +454,23 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
       Object.values(peerConnections.current).forEach(pc => pc.close());
       peerConnections.current = {};
       
-      if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
+      Object.values(disconnectTimers.current).forEach(timer => clearTimeout(timer));
+      disconnectTimers.current = {};
+      
+      if (effectCleanupRef.current) {
+        effectCleanupRef.current();
+        effectCleanupRef.current = null;
       }
+      
+      if (originalStreamRef.current) {
+        originalStreamRef.current.getTracks().forEach(track => track.stop());
+        originalStreamRef.current = null;
+      }
+      if (processedStreamRef.current) {
+        processedStreamRef.current.getTracks().forEach(track => track.stop());
+        processedStreamRef.current = null;
+      }
+      setLocalStream(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomCode]);
@@ -445,9 +478,15 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
   useEffect(() => {
     if (!originalStreamRef.current || role === 'observer') return;
     
+    if (effectCleanupRef.current) {
+      effectCleanupRef.current();
+    }
+    
     // Apply new effect
-    const newStream = applyVoiceEffect(originalStreamRef.current, voiceEffect);
+    const { stream: newStream, cleanup } = applyVoiceEffect(originalStreamRef.current, voiceEffect);
     processedStreamRef.current = newStream;
+    effectCleanupRef.current = cleanup;
+    
     const newAudioTrack = newStream.getAudioTracks()[0];
     
     // Replace track in all active peer connections
@@ -519,6 +558,11 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
     if (!channelRef.current || !isConnected) return;
     if (timeoutUntil && Date.now() < timeoutUntil) return;
 
+    if (audioData && audioData.length > 500000) {
+      console.warn("Custom audio too large");
+      return;
+    }
+
     const spamReason = checkSpam('sound');
     if (spamReason) {
       applyTimeout(spamReason);
@@ -528,8 +572,10 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
     channelRef.current.send({ type: 'broadcast', event: 'sound', payload: { soundId, audioData } });
     
     if (soundId === 'custom' && audioData) {
-      const audio = new Audio(audioData);
-      audio.play().catch(e => console.error("Error playing custom sound:", e));
+      if (typeof audioData === 'string' && audioData.length < 500000) {
+        const audio = new Audio(audioData);
+        audio.play().catch(e => console.error("Error playing custom sound:", e));
+      }
     } else {
       playSound(soundId);
     }

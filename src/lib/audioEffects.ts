@@ -1,7 +1,6 @@
 export type VoiceEffect = 'none' | 'robot' | 'cave' | 'radio' | 'chipmunk' | 'monster' | 'alien';
 
 let audioCtx: AudioContext | null = null;
-let sourceNode: MediaStreamAudioSourceNode | null = null;
 
 export function getAudioContext() {
   if (!audioCtx) {
@@ -10,17 +9,18 @@ export function getAudioContext() {
   return audioCtx;
 }
 
-export function applyVoiceEffect(stream: MediaStream, effect: VoiceEffect): MediaStream {
+export function applyVoiceEffect(stream: MediaStream, effect: VoiceEffect): { stream: MediaStream, cleanup: () => void } {
   const ctx = getAudioContext();
   
-  if (!sourceNode || sourceNode.mediaStream !== stream) {
-    sourceNode = ctx.createMediaStreamSource(stream);
-  }
-  
+  const sourceNode = ctx.createMediaStreamSource(stream);
   const destination = ctx.createMediaStreamDestination();
   
-  // Disconnect previous routing
-  sourceNode.disconnect();
+  let cleanupFns: (() => void)[] = [];
+  
+  const cleanup = () => {
+    sourceNode.disconnect();
+    cleanupFns.forEach(fn => fn());
+  };
 
   if (effect === 'none') {
     sourceNode.connect(destination);
@@ -49,9 +49,6 @@ export function applyVoiceEffect(stream: MediaStream, effect: VoiceEffect): Medi
     sourceNode.connect(filter);
     filter.connect(destination);
   } else if (effect === 'chipmunk') {
-    // Pitch shift up (simplified using playbackRate on a buffer, but for live stream we use a simple trick: 
-    // Web Audio API doesn't have a native real-time pitch shifter node without complex worklets.
-    // We'll simulate it with a high-pass filter and slight distortion for a "squeaky" feel)
     const filter = ctx.createBiquadFilter();
     filter.type = 'highpass';
     filter.frequency.value = 1200;
@@ -63,7 +60,6 @@ export function applyVoiceEffect(stream: MediaStream, effect: VoiceEffect): Medi
     filter.connect(waveShaper);
     waveShaper.connect(destination);
   } else if (effect === 'monster') {
-    // Simulate deep voice with low-pass filter and heavy distortion
     const filter = ctx.createBiquadFilter();
     filter.type = 'lowpass';
     filter.frequency.value = 400;
@@ -75,10 +71,9 @@ export function applyVoiceEffect(stream: MediaStream, effect: VoiceEffect): Medi
     filter.connect(waveShaper);
     waveShaper.connect(destination);
   } else if (effect === 'alien') {
-    // Ring modulator effect (oscillator multiplied with voice)
     const osc = ctx.createOscillator();
     osc.type = 'sine';
-    osc.frequency.value = 50; // 50Hz modulation
+    osc.frequency.value = 50;
     
     const gainNode = ctx.createGain();
     gainNode.gain.value = 0;
@@ -86,17 +81,18 @@ export function applyVoiceEffect(stream: MediaStream, effect: VoiceEffect): Medi
     osc.connect(gainNode.gain);
     osc.start();
     
+    cleanupFns.push(() => osc.stop());
+    
     sourceNode.connect(gainNode);
     gainNode.connect(destination);
     
-    // Mix some dry signal
     const dryGain = ctx.createGain();
     dryGain.gain.value = 0.5;
     sourceNode.connect(dryGain);
     dryGain.connect(destination);
   }
 
-  return destination.stream;
+  return { stream: destination.stream, cleanup };
 }
 
 function makeDistortionCurve(amount: number) {

@@ -12,6 +12,8 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://minevine.app";
+
 export const metadata: Metadata = {
   title: {
     default: "Minevine | Safe Audio Chat for Kids Gaming",
@@ -27,14 +29,14 @@ export const metadata: Metadata = {
     address: false,
     telephone: false,
   },
-  metadataBase: new URL("https://minevine.app"),
+  metadataBase: new URL(siteUrl),
   alternates: {
     canonical: "/",
   },
   openGraph: {
     title: "Minevine | Safe Audio Chat for Kids Gaming",
     description: "Fun, safe, and easy-to-use audio chat for kids playing games. Create a room, share the code, and start chatting with fun voice effects!",
-    url: "https://minevine.app",
+    url: siteUrl,
     siteName: "Minevine",
     images: [
       {
