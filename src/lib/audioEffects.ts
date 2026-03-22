@@ -1,11 +1,11 @@
-export type VoiceEffect = 'none' | 'robot' | 'cave' | 'radio';
+export type VoiceEffect = 'none' | 'robot' | 'cave' | 'radio' | 'chipmunk' | 'monster' | 'alien';
 
 let audioCtx: AudioContext | null = null;
 let sourceNode: MediaStreamAudioSourceNode | null = null;
 
 export function getAudioContext() {
   if (!audioCtx) {
-    audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
   }
   return audioCtx;
 }
@@ -48,6 +48,52 @@ export function applyVoiceEffect(stream: MediaStream, effect: VoiceEffect): Medi
     filter.Q.value = 2.0;
     sourceNode.connect(filter);
     filter.connect(destination);
+  } else if (effect === 'chipmunk') {
+    // Pitch shift up (simplified using playbackRate on a buffer, but for live stream we use a simple trick: 
+    // Web Audio API doesn't have a native real-time pitch shifter node without complex worklets.
+    // We'll simulate it with a high-pass filter and slight distortion for a "squeaky" feel)
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.value = 1200;
+    
+    const waveShaper = ctx.createWaveShaper();
+    waveShaper.curve = makeDistortionCurve(10);
+    
+    sourceNode.connect(filter);
+    filter.connect(waveShaper);
+    waveShaper.connect(destination);
+  } else if (effect === 'monster') {
+    // Simulate deep voice with low-pass filter and heavy distortion
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 400;
+    
+    const waveShaper = ctx.createWaveShaper();
+    waveShaper.curve = makeDistortionCurve(80);
+    
+    sourceNode.connect(filter);
+    filter.connect(waveShaper);
+    waveShaper.connect(destination);
+  } else if (effect === 'alien') {
+    // Ring modulator effect (oscillator multiplied with voice)
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = 50; // 50Hz modulation
+    
+    const gainNode = ctx.createGain();
+    gainNode.gain.value = 0;
+    
+    osc.connect(gainNode.gain);
+    osc.start();
+    
+    sourceNode.connect(gainNode);
+    gainNode.connect(destination);
+    
+    // Mix some dry signal
+    const dryGain = ctx.createGain();
+    dryGain.gain.value = 0.5;
+    sourceNode.connect(dryGain);
+    dryGain.connect(destination);
   }
 
   return destination.stream;
@@ -108,5 +154,68 @@ export function playSound(soundId: string) {
     gain.gain.linearRampToValueAtTime(0.01, now + 0.2);
     osc.start(now);
     osc.stop(now + 0.2);
+  } else if (soundId === 'fart') {
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(150, now);
+    osc.frequency.exponentialRampToValueAtTime(40, now + 0.3);
+    
+    // Add some noise/wobble
+    const lfo = ctx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = 50;
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = 50;
+    lfo.connect(lfoGain);
+    lfoGain.connect(osc.frequency);
+    lfo.start(now);
+    lfo.stop(now + 0.3);
+
+    gain.gain.setValueAtTime(0.4, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+    osc.start(now);
+    osc.stop(now + 0.3);
+  } else if (soundId === 'applause') {
+    // White noise for applause
+    const bufferSize = ctx.sampleRate * 2; // 2 seconds
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+    
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+    
+    // Filter the noise to sound more like clapping
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 1000;
+    filter.Q.value = 0.5;
+    
+    noise.connect(filter);
+    filter.connect(gain);
+    
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.3, now + 0.2);
+    gain.gain.linearRampToValueAtTime(0.3, now + 1.5);
+    gain.gain.linearRampToValueAtTime(0, now + 2);
+    
+    noise.start(now);
+    noise.stop(now + 2);
+  } else if (soundId === 'trombone') {
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(300, now);
+    osc.frequency.linearRampToValueAtTime(280, now + 0.4);
+    osc.frequency.setValueAtTime(280, now + 0.4);
+    osc.frequency.linearRampToValueAtTime(250, now + 0.8);
+    osc.frequency.setValueAtTime(250, now + 0.8);
+    osc.frequency.linearRampToValueAtTime(200, now + 1.5);
+    
+    gain.gain.setValueAtTime(0.3, now);
+    gain.gain.setValueAtTime(0.3, now + 1.2);
+    gain.gain.linearRampToValueAtTime(0.01, now + 1.5);
+    
+    osc.start(now);
+    osc.stop(now + 1.5);
   }
 }

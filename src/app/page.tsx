@@ -6,7 +6,7 @@ import { generateName } from '@/lib/generateName';
 import { useAudioChat, UserRole } from '@/hooks/useAudioChat';
 import { AudioPlayer } from '@/components/AudioPlayer';
 import { VoiceEffect } from '@/lib/audioEffects';
-import { Mic, MicOff, PhoneOff, Users, Copy, Check, Dices, Send, Smile, Volume2, Sparkles, Zap, Radio, Eye } from 'lucide-react';
+import { Mic, MicOff, PhoneOff, Users, Copy, Check, Dices, Send, Smile, Eye, Wifi } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
 import confetti from 'canvas-confetti';
@@ -22,9 +22,11 @@ export default function Home() {
   const [maxMembers, setMaxMembers] = useState<number>(3);
   const [isMomMode, setIsMomMode] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setUsername(generateName());
   }, []);
 
@@ -33,6 +35,9 @@ export default function Home() {
   const { 
     peers, 
     peerNames, 
+    peerVolumes,
+    setPeerVolume,
+    peerQuality,
     isMuted, 
     toggleMute, 
     error, 
@@ -43,8 +48,16 @@ export default function Home() {
     setVoiceEffect,
     sendReaction,
     triggerSound,
+    triggerMinigame,
+    activeMinigame,
     floatingReactions,
-    removeReaction
+    removeReaction,
+    timeoutUntil,
+    timeoutReason,
+    timeLeft,
+    isSpeaking,
+    isOnline,
+    isReconnecting
   } = useAudioChat(roomCode, username, role);
 
   // Scroll to bottom of chat
@@ -92,9 +105,14 @@ export default function Home() {
   };
 
   const handleLeaveRoom = () => {
+    setShowLeaveConfirm(true);
+  };
+
+  const confirmLeaveRoom = () => {
     setRoomCode(null);
     setJoinCode('');
     setIsMomMode(false);
+    setShowLeaveConfirm(false);
   };
 
   const copyCode = () => {
@@ -114,7 +132,7 @@ export default function Home() {
     }
   };
 
-  const onEmojiClick = (emojiObject: any) => {
+  const onEmojiClick = (emojiObject: { emoji: string }) => {
     setChatInput(prev => prev + emojiObject.emoji);
   };
 
@@ -123,8 +141,59 @@ export default function Home() {
 
   if (roomCode) {
     return (
-      <div className="min-h-screen bg-slate-900 text-white flex flex-col md:flex-row items-center justify-center p-4 gap-6 relative overflow-hidden">
+      <div className="min-h-[100dvh] bg-slate-900 text-white flex flex-col md:flex-row items-center justify-center p-4 gap-6 relative overflow-y-auto md:overflow-hidden">
         
+        {/* Network Status Banners */}
+        {!isOnline && (
+          <div className="absolute top-0 left-0 right-0 bg-red-500 text-white text-center py-2 z-[200] font-bold animate-pulse shadow-lg">
+            ⚠️ You are offline. Waiting for internet connection...
+          </div>
+        )}
+        {isOnline && isReconnecting && (
+          <div className="absolute top-0 left-0 right-0 bg-amber-500 text-white text-center py-2 z-[200] font-bold animate-pulse shadow-lg">
+            🔄 Reconnecting to chat...
+          </div>
+        )}
+
+        {/* Leave Confirmation Modal */}
+        <AnimatePresence>
+          {showLeaveConfirm && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+            >
+              <motion.div 
+                initial={{ scale: 0.9, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.9, y: 20 }}
+                className="bg-slate-800 p-8 rounded-3xl shadow-2xl max-w-sm w-full border border-slate-700 text-center"
+              >
+                <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <PhoneOff className="w-10 h-10 text-red-500" />
+                </div>
+                <h3 className="text-2xl font-black text-white mb-2">Leaving so soon?</h3>
+                <p className="text-slate-400 mb-8">Are you sure you want to leave the chat room?</p>
+                <div className="flex gap-4">
+                  <button 
+                    onClick={() => setShowLeaveConfirm(false)}
+                    className="flex-1 py-3 px-4 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold transition-colors"
+                  >
+                    No, stay
+                  </button>
+                  <button 
+                    onClick={confirmLeaveRoom}
+                    className="flex-1 py-3 px-4 bg-red-500 hover:bg-red-600 text-white rounded-xl font-bold transition-colors shadow-lg shadow-red-500/20"
+                  >
+                    Yes, leave
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Floating Reactions Layer */}
         <div className="pointer-events-none fixed inset-0 z-50 overflow-hidden">
           <AnimatePresence>
@@ -148,7 +217,7 @@ export default function Home() {
         <motion.div 
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
-          className="bg-slate-800 p-8 rounded-3xl shadow-2xl w-full max-w-md text-center border border-slate-700 flex flex-col h-[85vh]"
+          className="bg-slate-800 p-6 md:p-8 rounded-3xl shadow-2xl w-full max-w-md text-center border border-slate-700 flex flex-col h-[60vh] md:h-[85vh] shrink-0"
         >
           <h2 className="text-2xl font-bold mb-2 text-slate-300">Room Code</h2>
           <div 
@@ -182,6 +251,9 @@ export default function Home() {
                 <div className="flex flex-col items-center gap-2">
                   <div className="w-20 h-20 rounded-full bg-indigo-500 flex items-center justify-center text-3xl shadow-lg border-4 border-indigo-400 relative">
                     😎
+                    {isSpeaking && (
+                      <div className="absolute -inset-2 rounded-full border-4 border-indigo-400 animate-pulse pointer-events-none" />
+                    )}
                     {isMuted && (
                       <div className="absolute -bottom-2 -right-2 bg-red-500 rounded-full p-1.5 border-2 border-slate-900">
                         <MicOff className="w-4 h-4 text-white" />
@@ -203,15 +275,33 @@ export default function Home() {
               )}
               
               {/* Remote Peers (Only Kids) */}
-              {visiblePeers.map(([id, stream]) => (
-                <div key={id} className="flex flex-col items-center gap-2">
-                  <div className="w-20 h-20 rounded-full bg-emerald-500 flex items-center justify-center text-3xl shadow-lg border-4 border-emerald-400 relative">
-                    <AudioPlayer stream={stream} />
-                    👾
+              {visiblePeers.map(([id, stream]) => {
+                const quality = peerQuality[id] || 'good';
+                const qualityColor = quality === 'good' ? 'text-emerald-400' : quality === 'fair' ? 'text-amber-400' : 'text-red-400';
+                
+                return (
+                  <div key={id} className="flex flex-col items-center gap-2">
+                    <div className="w-20 h-20 rounded-full bg-emerald-500 flex items-center justify-center text-3xl shadow-lg border-4 border-emerald-400 relative">
+                      <AudioPlayer stream={stream} volume={peerVolumes[id] ?? 1} />
+                      👾
+                      <div className="absolute -top-2 -right-2 bg-slate-800 rounded-full p-1 border-2 border-slate-700" title={`Connection: ${quality}`}>
+                        <Wifi className={`w-4 h-4 ${qualityColor}`} />
+                      </div>
+                    </div>
+                    <span className="font-bold text-sm text-emerald-300">{peerNames[id]?.name || 'Kid'}</span>
+                    <input 
+                      type="range" 
+                      min="0" 
+                      max="1" 
+                      step="0.01" 
+                      value={peerVolumes[id] ?? 1} 
+                      onChange={(e) => setPeerVolume(id, parseFloat(e.target.value))}
+                      className="w-16 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                      title="Volume"
+                    />
                   </div>
-                  <span className="font-bold text-sm text-emerald-300">{peerNames[id]?.name || 'Kid'}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -219,8 +309,8 @@ export default function Home() {
           {role === 'kid' && (
             <div className="mb-6">
               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Voice Changer</p>
-              <div className="flex justify-center gap-2">
-                {(['none', 'robot', 'cave', 'radio'] as VoiceEffect[]).map((effect) => (
+              <div className="flex justify-center gap-2 flex-wrap">
+                {(['none', 'robot', 'cave', 'radio', 'chipmunk', 'monster', 'alien'] as VoiceEffect[]).map((effect) => (
                   <button
                     key={effect}
                     onClick={() => setVoiceEffect(effect)}
@@ -263,12 +353,39 @@ export default function Home() {
         <motion.div 
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
-          className="bg-slate-800 rounded-3xl shadow-2xl w-full max-w-md border border-slate-700 flex flex-col h-[85vh] overflow-hidden relative"
+          className="bg-slate-800 rounded-3xl shadow-2xl w-full max-w-md border border-slate-700 flex flex-col h-[60vh] md:h-[85vh] overflow-hidden relative shrink-0"
         >
-          <div className="bg-slate-900 p-4 border-b border-slate-700">
+          {timeoutUntil && (
+            <div className="absolute inset-0 z-50 bg-slate-900/95 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center">
+              <div className="text-7xl mb-6 animate-bounce">🚨</div>
+              <h2 className="text-4xl font-black text-red-500 mb-4 tracking-wider">TIMEOUT!</h2>
+              <p className="text-slate-300 text-xl mb-6">
+                You are in timeout for<br/>
+                <span className="font-bold text-white text-2xl block mt-2">{timeoutReason}</span>
+              </p>
+              <div className="text-6xl font-black font-mono text-amber-400 drop-shadow-[0_0_15px_rgba(251,191,36,0.5)]">
+                {timeLeft}s
+              </div>
+              <p className="text-slate-500 mt-8 text-sm">Think about what you&apos;ve done... 🤫</p>
+            </div>
+          )}
+
+          <div className="bg-slate-900 p-4 border-b border-slate-700 flex justify-between items-center">
             <h3 className="font-bold text-lg text-slate-200">Fun Zone 💬</h3>
+            <button 
+              onClick={() => triggerMinigame('simon_says')}
+              className="text-xs bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1.5 rounded-lg transition-colors font-bold"
+            >
+              Play Simon Says!
+            </button>
           </div>
           
+          {activeMinigame && (
+            <div className="bg-indigo-500/20 border-b border-indigo-500/30 p-3 text-center animate-pulse">
+              <span className="font-bold text-indigo-300">🎮 {activeMinigame.starter} started {activeMinigame.type.replace('_', ' ')}!</span>
+            </div>
+          )}
+
           {/* Soundboard & Reactions */}
           <div className="bg-slate-800/80 p-3 border-b border-slate-700 flex flex-col gap-3">
             <div className="flex items-center justify-between">
@@ -278,6 +395,9 @@ export default function Home() {
                 <button onClick={() => triggerSound('magic')} className="p-2 bg-slate-700 hover:bg-purple-500 rounded-lg transition-colors text-xl" title="Magic">✨</button>
                 <button onClick={() => triggerSound('buzzer')} className="p-2 bg-slate-700 hover:bg-red-500 rounded-lg transition-colors text-xl" title="Buzzer">🚨</button>
                 <button onClick={() => triggerSound('jump')} className="p-2 bg-slate-700 hover:bg-emerald-500 rounded-lg transition-colors text-xl" title="Jump">🦘</button>
+                <button onClick={() => triggerSound('fart')} className="p-2 bg-slate-700 hover:bg-amber-500 rounded-lg transition-colors text-xl" title="Fart">💨</button>
+                <button onClick={() => triggerSound('applause')} className="p-2 bg-slate-700 hover:bg-blue-500 rounded-lg transition-colors text-xl" title="Applause">👏</button>
+                <button onClick={() => triggerSound('trombone')} className="p-2 bg-slate-700 hover:bg-slate-500 rounded-lg transition-colors text-xl" title="Sad Trombone">🎺</button>
               </div>
             </div>
             
