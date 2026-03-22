@@ -231,15 +231,20 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
 
     const initChat = async () => {
       try {
-        // 1. Check room max members in DB
+        // 1. Check room max members and expiration in DB
         const { data: roomData, error: roomError } = await supabase
           .from('rooms')
-          .select('max_members')
+          .select('max_members, expires_at')
           .eq('code', roomCode)
           .single();
 
         if (roomError || !roomData) {
-          setError('Invalid room code or room has expired.');
+          setError('Invalid room code.');
+          return;
+        }
+
+        if (roomData.expires_at && new Date(roomData.expires_at) < new Date()) {
+          setError('This room has expired. Please create a new one.');
           return;
         }
 
@@ -352,7 +357,12 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
             setFloatingReactions(prev => [...prev, { id: Math.random().toString(), emoji: payload.emoji, x: Math.random() * 80 + 10, type: payload.type, text: payload.text, rotate: Math.random() * 40 - 20 }]);
           })
           .on('broadcast', { event: 'sound' }, ({ payload }) => {
-            playSound(payload.soundId);
+            if (payload.soundId === 'custom' && payload.audioData) {
+              const audio = new Audio(payload.audioData);
+              audio.play().catch(e => console.error("Error playing custom sound:", e));
+            } else {
+              playSound(payload.soundId);
+            }
           })
           .on('broadcast', { event: 'minigame' }, ({ payload }) => {
             if (payload.action === 'start') {
@@ -493,7 +503,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
     setFloatingReactions(prev => [...prev, { id: Math.random().toString(), emoji, x: Math.random() * 80 + 10, type, text, rotate }]);
   };
 
-  const triggerSound = (soundId: string) => {
+  const triggerSound = (soundId: string, audioData?: string) => {
     if (!channelRef.current || !isConnected) return;
     if (timeoutUntil && Date.now() < timeoutUntil) return;
 
@@ -503,8 +513,14 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
       return;
     }
 
-    channelRef.current.send({ type: 'broadcast', event: 'sound', payload: { soundId } });
-    playSound(soundId);
+    channelRef.current.send({ type: 'broadcast', event: 'sound', payload: { soundId, audioData } });
+    
+    if (soundId === 'custom' && audioData) {
+      const audio = new Audio(audioData);
+      audio.play().catch(e => console.error("Error playing custom sound:", e));
+    } else {
+      playSound(soundId);
+    }
   };
 
   const triggerMinigame = (gameType: string, action: 'start' | 'guess' | 'end' = 'start', data?: { word?: string, letter?: string }) => {

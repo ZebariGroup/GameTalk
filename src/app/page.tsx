@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
 import confetti from 'canvas-confetti';
 import { supabase } from '@/lib/supabase';
+import Avatar from 'boring-avatars';
 
 export default function Home() {
   const [roomCode, setRoomCode] = useState<string | null>(null);
@@ -26,10 +27,57 @@ export default function Home() {
   const [showWordInput, setShowWordInput] = useState(false);
   const [secretWord, setSecretWord] = useState('');
   const [easterEgg, setEasterEgg] = useState<string | null>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const [customSound, setCustomSound] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = () => {
+          const base64data = reader.result as string;
+          setCustomSound(base64data);
+        };
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      
+      // Auto stop after 3 seconds
+      setTimeout(() => {
+        if (mediaRecorderRef.current?.state === 'recording') {
+          stopRecording();
+        }
+      }, 3000);
+    } catch (err) {
+      console.error('Error accessing microphone for recording:', err);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setUsername(generateName());
   }, []);
 
@@ -63,6 +111,8 @@ export default function Home() {
     isReconnecting
   } = useAudioChat(roomCode, username, role);
 
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
   // Scroll to bottom of chat and check for easter eggs
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -73,15 +123,12 @@ export default function Home() {
       const text = lastMsg.text.toLowerCase();
       
       if (text === 'do a barrel roll') {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setEasterEgg('barrel-roll');
         setTimeout(() => setEasterEgg(null), 2000);
       } else if (text === 'earthquake') {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setEasterEgg('shake');
         setTimeout(() => setEasterEgg(null), 1500);
       } else if (text === 'matrix') {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setEasterEgg(prev => prev === 'matrix' ? null : 'matrix');
       } else if (text === 'party') {
         confetti({ particleCount: 200, spread: 160 });
@@ -110,9 +157,13 @@ export default function Home() {
     setIsCreating(true);
     const code = generateRoomCode();
     
-    // Save room to DB with max members
+    // Calculate expiration time (24 hours from now)
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 24);
+    
+    // Save room to DB with max members and expiration
     const { error } = await supabase.from('rooms').insert([
-      { code, max_members: maxMembers }
+      { code, max_members: maxMembers, expires_at: expiresAt.toISOString() }
     ]);
 
     setIsCreating(false);
@@ -288,19 +339,24 @@ export default function Home() {
                   animate={easterEgg === 'shake' ? { y: [0, -10, 0, 10, 0], x: [0, -5, 5, 0] } : {}}
                   transition={{ duration: 0.5, repeat: easterEgg === 'shake' ? Infinity : 0 }}
                 >
-                  <div className="w-20 h-20 rounded-full bg-indigo-500 flex items-center justify-center text-3xl shadow-lg border-4 border-indigo-400 relative overflow-hidden group">
+                  <div className="w-20 h-20 rounded-full flex items-center justify-center shadow-lg border-4 border-indigo-400 relative overflow-hidden group bg-slate-800">
                     <motion.div 
                       animate={{ rotate: easterEgg === 'barrel-roll' ? 360 : 0 }} 
                       transition={{ duration: 1 }}
-                      className="group-hover:scale-125 transition-transform"
+                      className="group-hover:scale-110 transition-transform w-full h-full"
                     >
-                      😎
+                      <Avatar
+                        size={80}
+                        name={username}
+                        variant="beam"
+                        colors={['#34d399', '#38bdf8', '#818cf8', '#c084fc', '#fbbf24']}
+                      />
                     </motion.div>
                     {isSpeaking && (
                       <div className="absolute -inset-2 rounded-full border-4 border-indigo-400 animate-pulse pointer-events-none" />
                     )}
                     {isMuted && (
-                      <div className="absolute -bottom-2 -right-2 bg-red-500 rounded-full p-1.5 border-2 border-slate-900">
+                      <div className="absolute -bottom-2 -right-2 bg-red-500 rounded-full p-1.5 border-2 border-slate-900 z-10">
                         <MicOff className="w-4 h-4 text-white" />
                       </div>
                     )}
@@ -323,6 +379,7 @@ export default function Home() {
               {visiblePeers.map(([id, stream]) => {
                 const quality = peerQuality[id] || 'good';
                 const qualityColor = quality === 'good' ? 'text-emerald-400' : quality === 'fair' ? 'text-amber-400' : 'text-red-400';
+                const peerName = peerNames[id]?.name || 'Kid';
                 
                 return (
                   <motion.div 
@@ -331,20 +388,25 @@ export default function Home() {
                     animate={easterEgg === 'shake' ? { y: [0, -10, 0, 10, 0], x: [0, 5, -5, 0] } : {}}
                     transition={{ duration: 0.5, repeat: easterEgg === 'shake' ? Infinity : 0 }}
                   >
-                    <div className="w-20 h-20 rounded-full bg-emerald-500 flex items-center justify-center text-3xl shadow-lg border-4 border-emerald-400 relative overflow-hidden group">
+                    <div className="w-20 h-20 rounded-full flex items-center justify-center shadow-lg border-4 border-emerald-400 relative overflow-hidden group bg-slate-800">
                       <AudioPlayer stream={stream} volume={peerVolumes[id] ?? 1} />
                       <motion.div 
                         animate={{ rotate: easterEgg === 'barrel-roll' ? 360 : 0 }} 
                         transition={{ duration: 1 }}
-                        className="group-hover:scale-125 transition-transform"
+                        className="group-hover:scale-110 transition-transform w-full h-full"
                       >
-                        👾
+                        <Avatar
+                          size={80}
+                          name={peerName}
+                          variant="beam"
+                          colors={['#34d399', '#38bdf8', '#818cf8', '#c084fc', '#fbbf24']}
+                        />
                       </motion.div>
-                      <div className="absolute -top-2 -right-2 bg-slate-800 rounded-full p-1 border-2 border-slate-700" title={`Connection: ${quality}`}>
+                      <div className="absolute -top-2 -right-2 bg-slate-800 rounded-full p-1 border-2 border-slate-700 z-10" title={`Connection: ${quality}`}>
                         <Wifi className={`w-4 h-4 ${qualityColor}`} />
                       </div>
                     </div>
-                    <span className="font-bold text-sm text-emerald-300">{peerNames[id]?.name || 'Kid'}</span>
+                    <span className="font-bold text-sm text-emerald-300">{peerName}</span>
                     <input 
                       type="range" 
                       min="0" 
@@ -536,15 +598,36 @@ export default function Home() {
           {/* Soundboard & Reactions */}
           <div className="bg-slate-800/80 p-3 border-b border-slate-700 flex flex-col gap-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Soundboard</span>
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Classic Sounds</span>
               <div className="flex gap-1.5">
                 <button onClick={() => triggerSound('laser')} className="w-10 h-10 bg-slate-700 hover:bg-indigo-500 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Laser">🔫</button>
                 <button onClick={() => triggerSound('magic')} className="w-10 h-10 bg-slate-700 hover:bg-purple-500 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Magic">✨</button>
                 <button onClick={() => triggerSound('buzzer')} className="w-10 h-10 bg-slate-700 hover:bg-red-500 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Buzzer">🚨</button>
-                <button onClick={() => triggerSound('jump')} className="w-10 h-10 bg-slate-700 hover:bg-emerald-500 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Jump">🦘</button>
                 <button onClick={() => triggerSound('fart')} className="w-10 h-10 bg-slate-700 hover:bg-amber-500 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Fart">💨</button>
                 <button onClick={() => triggerSound('applause')} className="w-10 h-10 bg-slate-700 hover:bg-blue-500 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Applause">👏</button>
                 <button onClick={() => triggerSound('trombone')} className="w-10 h-10 bg-slate-700 hover:bg-slate-500 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Sad Trombone">🎺</button>
+                {customSound ? (
+                  <button onClick={() => triggerSound('custom', customSound)} className="w-10 h-10 bg-emerald-500 hover:bg-emerald-400 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Play Custom Sound">🎵</button>
+                ) : (
+                  <button 
+                    onClick={isRecording ? stopRecording : startRecording} 
+                    className={`w-10 h-10 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-slate-700 hover:bg-red-500'}`} 
+                    title={isRecording ? "Stop Recording" : "Record Custom Sound (3s)"}
+                  >
+                    🎤
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Game Sounds</span>
+              <div className="flex gap-1.5">
+                <button onClick={() => triggerSound('mc_break')} className="w-10 h-10 bg-slate-700 hover:bg-green-600 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Block Break">⛏️</button>
+                <button onClick={() => triggerSound('fn_shield')} className="w-10 h-10 bg-slate-700 hover:bg-blue-400 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Shield Pop">🛡️</button>
+                <button onClick={() => triggerSound('mario_coin')} className="w-10 h-10 bg-slate-700 hover:bg-yellow-400 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Coin">🪙</button>
+                <button onClick={() => triggerSound('roblox_oof')} className="w-10 h-10 bg-slate-700 hover:bg-red-500 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Oof">🤕</button>
+                <button onClick={() => triggerSound('jump')} className="w-10 h-10 bg-slate-700 hover:bg-emerald-500 rounded-xl transition-all hover:scale-110 hover:-translate-y-1 shadow-lg flex items-center justify-center text-xl" title="Jump">🦘</button>
               </div>
             </div>
             

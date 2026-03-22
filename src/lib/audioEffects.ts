@@ -217,5 +217,70 @@ export function playSound(soundId: string) {
     
     osc.start(now);
     osc.stop(now + 1.5);
+  } else if (soundId === 'mc_break') {
+    // Minecraft block break sound simulation
+    const bufferSize = ctx.sampleRate * 0.2; // short sound
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.05));
+    }
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+    
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 800;
+    
+    noise.connect(filter);
+    filter.connect(gain);
+    
+    gain.gain.setValueAtTime(0.5, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+    
+    noise.start(now);
+  } else if (soundId === 'fn_shield') {
+    // Fortnite shield pop simulation
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(600, now);
+    osc.frequency.exponentialRampToValueAtTime(1200, now + 0.3);
+    
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.4, now + 0.1);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+    
+    osc.start(now);
+    osc.stop(now + 0.4);
+  } else if (soundId === 'mario_coin') {
+    // Mario coin ring simulation
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(987.77, now); // B5
+    osc.frequency.setValueAtTime(1318.51, now + 0.1); // E6
+    
+    gain.gain.setValueAtTime(0.2, now);
+    gain.gain.setValueAtTime(0.2, now + 0.1);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+    
+    osc.start(now);
+    osc.stop(now + 0.4);
+  } else if (soundId === 'roblox_oof') {
+    // Roblox OOF simulation (vocal-ish synth)
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(300, now);
+    osc.frequency.exponentialRampToValueAtTime(200, now + 0.2);
+    
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 800;
+    filter.Q.value = 2;
+    
+    osc.connect(filter);
+    filter.connect(gain);
+    
+    gain.gain.setValueAtTime(0.4, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+    
+    osc.start(now);
+    osc.stop(now + 0.2);
   }
 }
