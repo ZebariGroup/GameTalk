@@ -33,10 +33,10 @@ export interface Reaction {
   rotate?: number;
 }
 
-export function useAudioChat(roomCode: string | null, username: string, role: UserRole = 'kid', avatarVariant: 'beam' | 'marble' | 'pixel' | 'sunset' | 'ring' | 'bauhaus' = 'beam') {
+export function useAudioChat(roomCode: string | null, username: string, role: UserRole = 'kid', avatarVariant: 'beam' | 'marble' | 'pixel' | 'sunset' | 'ring' | 'bauhaus' = 'beam', avatarColors: string[] = ['#34d399', '#38bdf8', '#818cf8', '#c084fc', '#fbbf24']) {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [peers, setPeers] = useState<{ [id: string]: MediaStream }>({});
-  const [peerNames, setPeerNames] = useState<{ [id: string]: { name: string, role: UserRole, avatarVariant?: 'beam' | 'marble' | 'pixel' | 'sunset' | 'ring' | 'bauhaus' } }>({});
+  const [peerNames, setPeerNames] = useState<{ [id: string]: { name: string, role: UserRole, avatarVariant?: 'beam' | 'marble' | 'pixel' | 'sunset' | 'ring' | 'bauhaus', avatarColors?: string[] } }>({});
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [floatingReactions, setFloatingReactions] = useState<Reaction[]>([]);
   const [isMuted, setIsMuted] = useState(false);
@@ -73,7 +73,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
         channelRef.current.send({
           type: 'broadcast',
           event: 'peer-joined',
-          payload: { peerId: myIdRef.current, peerName: username, peerRole: role, avatarVariant }
+          payload: { peerId: myIdRef.current, peerName: username, peerRole: role, avatarVariant, avatarColors }
         });
       }
       
@@ -313,10 +313,10 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
             }
           })
           .on('broadcast', { event: 'peer-joined' }, async ({ payload }) => {
-            const { peerId, peerName, peerRole, avatarVariant: peerAvatarVariant } = payload;
+            const { peerId, peerName, peerRole, avatarVariant: peerAvatarVariant, avatarColors: peerAvatarColors } = payload;
             if (peerId === myIdRef.current) return;
             
-            setPeerNames(prev => ({ ...prev, [peerId]: { name: peerName || 'Kid', role: peerRole || 'kid', avatarVariant: peerAvatarVariant || 'beam' } }));
+            setPeerNames(prev => ({ ...prev, [peerId]: { name: peerName || 'Kid', role: peerRole || 'kid', avatarVariant: peerAvatarVariant || 'beam', avatarColors: peerAvatarColors } }));
 
             // A new peer joined, let's create a connection and send an offer
             const pc = createPeerConnection(peerId, processedStreamRef.current, channel);
@@ -326,15 +326,15 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
             channel.send({
               type: 'broadcast',
               event: 'signal',
-              payload: { target: peerId, sender: myIdRef.current, senderName: username, senderRole: role, avatarVariant, signal: { type: 'offer', sdp: offer } }
+              payload: { target: peerId, sender: myIdRef.current, senderName: username, senderRole: role, avatarVariant, avatarColors, signal: { type: 'offer', sdp: offer } }
             });
           })
           .on('broadcast', { event: 'signal' }, async ({ payload }) => {
-            const { target, sender, senderName, senderRole, avatarVariant: senderAvatarVariant, signal } = payload;
+            const { target, sender, senderName, senderRole, avatarVariant: senderAvatarVariant, avatarColors: senderAvatarColors, signal } = payload;
             if (target !== myIdRef.current) return;
 
             if (senderName) {
-              setPeerNames(prev => ({ ...prev, [sender]: { name: senderName, role: senderRole || 'kid', avatarVariant: senderAvatarVariant || 'beam' } }));
+              setPeerNames(prev => ({ ...prev, [sender]: { name: senderName, role: senderRole || 'kid', avatarVariant: senderAvatarVariant || 'beam', avatarColors: senderAvatarColors } }));
             }
 
             let pc = peerConnections.current[sender];
@@ -404,7 +404,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
               channel.send({
                 type: 'broadcast',
                 event: 'peer-joined',
-                payload: { peerId: myIdRef.current, peerName: username, peerRole: role, avatarVariant }
+                payload: { peerId: myIdRef.current, peerName: username, peerRole: role, avatarVariant, avatarColors }
               });
             } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
               setIsConnected(false);

@@ -6,12 +6,23 @@ import { generateName } from '@/lib/generateName';
 import { useAudioChat, UserRole } from '@/hooks/useAudioChat';
 import { AudioPlayer } from '@/components/AudioPlayer';
 import { VoiceEffect } from '@/lib/audioEffects';
-import { Mic, MicOff, PhoneOff, Users, Copy, Check, Dices, Send, Smile, Eye, Wifi } from 'lucide-react';
+import { Mic, MicOff, PhoneOff, Users, Copy, Check, Dices, Send, Smile, Eye, Wifi, Palette, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
 import confetti from 'canvas-confetti';
 import { supabase } from '@/lib/supabase';
 import Avatar from 'boring-avatars';
+
+const AVATAR_VARIANTS = ['beam', 'marble', 'pixel', 'sunset', 'ring', 'bauhaus'] as const;
+const COLOR_PALETTES = [
+  { name: 'Neon', colors: ['#34d399', '#38bdf8', '#818cf8', '#c084fc', '#fbbf24'] },
+  { name: 'Fire', colors: ['#ef4444', '#f97316', '#f59e0b', '#fbbf24', '#fef08a'] },
+  { name: 'Ocean', colors: ['#0ea5e9', '#0284c7', '#0369a1', '#075985', '#082f49'] },
+  { name: 'Cyberpunk', colors: ['#fdf000', '#ff003c', '#00e6f6', '#05d9e8', '#01012b'] },
+  { name: 'Pastel', colors: ['#fbcfe8', '#bbf7d0', '#bfdbfe', '#ddd6fe', '#f5d0fe'] },
+  { name: 'Forest', colors: ['#14532d', '#166534', '#15803d', '#16a34a', '#22c55e'] },
+  { name: 'Monochrome', colors: ['#0f172a', '#334155', '#64748b', '#94a3b8', '#e2e8f0'] }
+];
 
 export default function Home() {
   const [roomCode, setRoomCode] = useState<string | null>(null);
@@ -29,7 +40,8 @@ export default function Home() {
   const [easterEgg, setEasterEgg] = useState<string | null>(null);
   const [customSound, setCustomSound] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
-  const [avatarVariant, setAvatarVariant] = useState<'beam' | 'marble' | 'pixel' | 'sunset' | 'ring' | 'bauhaus'>('beam');
+  const [avatarVariant, setAvatarVariant] = useState<typeof AVATAR_VARIANTS[number]>('beam');
+  const [avatarColors, setAvatarColors] = useState<string[]>(COLOR_PALETTES[0].colors);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
@@ -110,7 +122,7 @@ export default function Home() {
     isSpeaking,
     isOnline,
     isReconnecting
-  } = useAudioChat(roomCode, username, role, avatarVariant);
+  } = useAudioChat(roomCode, username, role, avatarVariant, avatarColors);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -350,7 +362,7 @@ export default function Home() {
                         size={80}
                         name={username}
                         variant={avatarVariant}
-                        colors={['#34d399', '#38bdf8', '#818cf8', '#c084fc', '#fbbf24']}
+                        colors={avatarColors}
                       />
                     </motion.div>
                     {isSpeaking && (
@@ -400,7 +412,7 @@ export default function Home() {
                           size={80}
                           name={peerName}
                           variant={peerNames[id]?.avatarVariant || 'beam'}
-                          colors={['#34d399', '#38bdf8', '#818cf8', '#c084fc', '#fbbf24']}
+                          colors={peerNames[id]?.avatarColors || COLOR_PALETTES[0].colors}
                         />
                       </motion.div>
                       <div className="absolute -top-2 -right-2 bg-slate-800 rounded-full p-1 border-2 border-slate-700 z-10" title={`Connection: ${quality}`}>
@@ -735,40 +747,93 @@ export default function Home() {
 
         <div className="bg-slate-800 p-8 rounded-3xl shadow-2xl border border-slate-700 space-y-8">
           
-          {/* Username Generator Section */}
-          <div className="bg-slate-900 p-4 rounded-2xl border border-slate-700 text-center">
-            <p className="text-sm text-slate-400 mb-2">Your Secret Name & Avatar:</p>
-            <div className="flex items-center justify-center gap-3 mb-4">
-              <span className="text-2xl font-bold text-indigo-400">{username}</span>
-              <button 
-                onClick={() => setUsername(generateName())}
-                className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 transition-colors"
-                title="Roll new name"
+          {/* Profile Builder Section */}
+          <div className="bg-slate-900 p-6 rounded-2xl border border-slate-700 text-center space-y-6">
+            <div className="flex justify-center relative">
+              <motion.div
+                key={`${avatarVariant}-${avatarColors.join('')}-${username}`}
+                initial={{ scale: 0.8, rotate: -10 }}
+                animate={{ scale: 1, rotate: 0 }}
+                className="w-32 h-32 rounded-full overflow-hidden border-4 border-indigo-500 shadow-[0_0_20px_rgba(99,102,241,0.4)]"
               >
-                <Dices className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="flex items-center justify-center gap-4">
-              <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-indigo-400">
                 <Avatar
-                  size={64}
+                  size={128}
                   name={username}
                   variant={avatarVariant}
-                  colors={['#34d399', '#38bdf8', '#818cf8', '#c084fc', '#fbbf24']}
+                  colors={avatarColors}
                 />
-              </div>
-              <select
-                value={avatarVariant}
-                onChange={(e) => setAvatarVariant(e.target.value as any)}
-                className="bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              </motion.div>
+              <button 
+                onClick={() => {
+                  setUsername(generateName());
+                  setAvatarVariant(AVATAR_VARIANTS[Math.floor(Math.random() * AVATAR_VARIANTS.length)]);
+                  setAvatarColors(COLOR_PALETTES[Math.floor(Math.random() * COLOR_PALETTES.length)].colors);
+                }}
+                className="absolute -bottom-2 bg-indigo-500 hover:bg-indigo-400 text-white p-2 rounded-full shadow-lg transition-transform hover:scale-110"
+                title="Randomize Everything!"
               >
-                <option value="beam">Beam</option>
-                <option value="marble">Marble</option>
-                <option value="pixel">Pixel</option>
-                <option value="sunset">Sunset</option>
-                <option value="ring">Ring</option>
-                <option value="bauhaus">Bauhaus</option>
-              </select>
+                <Sparkles className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-center gap-3 mb-1">
+                <span className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400">{username}</span>
+                <button 
+                  onClick={() => setUsername(generateName())}
+                  className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 transition-colors"
+                  title="Roll new name"
+                >
+                  <Dices className="w-5 h-5" />
+                </button>
+              </div>
+              <p className="text-xs text-slate-500 uppercase tracking-widest font-bold">Your Secret Identity</p>
+            </div>
+
+            <div className="space-y-3 text-left">
+              <p className="text-sm font-bold text-slate-400 flex items-center gap-2">
+                <Smile className="w-4 h-4" /> Avatar Style
+              </p>
+              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                {AVATAR_VARIANTS.map(v => (
+                  <button
+                    key={v}
+                    onClick={() => setAvatarVariant(v)}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold capitalize whitespace-nowrap transition-all ${
+                      avatarVariant === v 
+                        ? 'bg-indigo-500 text-white shadow-lg scale-105' 
+                        : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                    }`}
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3 text-left">
+              <p className="text-sm font-bold text-slate-400 flex items-center gap-2">
+                <Palette className="w-4 h-4" /> Color Theme
+              </p>
+              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                {COLOR_PALETTES.map(p => {
+                  const isActive = avatarColors.join() === p.colors.join();
+                  return (
+                    <button
+                      key={p.name}
+                      onClick={() => setAvatarColors(p.colors)}
+                      className={`flex-shrink-0 w-12 h-12 rounded-full flex overflow-hidden border-2 transition-all ${
+                        isActive ? 'border-indigo-400 scale-110 shadow-lg' : 'border-transparent hover:scale-105 opacity-70 hover:opacity-100'
+                      }`}
+                      title={p.name}
+                    >
+                      {p.colors.map(c => (
+                        <div key={c} style={{ backgroundColor: c }} className="flex-1 h-full" />
+                      ))}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
