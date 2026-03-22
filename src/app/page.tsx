@@ -29,6 +29,7 @@ export default function Home() {
   const [easterEgg, setEasterEgg] = useState<string | null>(null);
   const [customSound, setCustomSound] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [avatarVariant, setAvatarVariant] = useState<'beam' | 'marble' | 'pixel' | 'sunset' | 'ring' | 'bauhaus'>('beam');
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
@@ -109,7 +110,7 @@ export default function Home() {
     isSpeaking,
     isOnline,
     isReconnecting
-  } = useAudioChat(roomCode, username, role);
+  } = useAudioChat(roomCode, username, role, avatarVariant);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -348,7 +349,7 @@ export default function Home() {
                       <Avatar
                         size={80}
                         name={username}
-                        variant="beam"
+                        variant={avatarVariant}
                         colors={['#34d399', '#38bdf8', '#818cf8', '#c084fc', '#fbbf24']}
                       />
                     </motion.div>
@@ -398,7 +399,7 @@ export default function Home() {
                         <Avatar
                           size={80}
                           name={peerName}
-                          variant="beam"
+                          variant={peerNames[id]?.avatarVariant || 'beam'}
                           colors={['#34d399', '#38bdf8', '#818cf8', '#c084fc', '#fbbf24']}
                         />
                       </motion.div>
@@ -736,8 +737,8 @@ export default function Home() {
           
           {/* Username Generator Section */}
           <div className="bg-slate-900 p-4 rounded-2xl border border-slate-700 text-center">
-            <p className="text-sm text-slate-400 mb-2">Your Secret Name:</p>
-            <div className="flex items-center justify-center gap-3">
+            <p className="text-sm text-slate-400 mb-2">Your Secret Name & Avatar:</p>
+            <div className="flex items-center justify-center gap-3 mb-4">
               <span className="text-2xl font-bold text-indigo-400">{username}</span>
               <button 
                 onClick={() => setUsername(generateName())}
@@ -746,6 +747,28 @@ export default function Home() {
               >
                 <Dices className="w-5 h-5" />
               </button>
+            </div>
+            <div className="flex items-center justify-center gap-4">
+              <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-indigo-400">
+                <Avatar
+                  size={64}
+                  name={username}
+                  variant={avatarVariant}
+                  colors={['#34d399', '#38bdf8', '#818cf8', '#c084fc', '#fbbf24']}
+                />
+              </div>
+              <select
+                value={avatarVariant}
+                onChange={(e) => setAvatarVariant(e.target.value as any)}
+                className="bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <option value="beam">Beam</option>
+                <option value="marble">Marble</option>
+                <option value="pixel">Pixel</option>
+                <option value="sunset">Sunset</option>
+                <option value="ring">Ring</option>
+                <option value="bauhaus">Bauhaus</option>
+              </select>
             </div>
           </div>
 

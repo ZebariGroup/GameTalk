@@ -33,10 +33,10 @@ export interface Reaction {
   rotate?: number;
 }
 
-export function useAudioChat(roomCode: string | null, username: string, role: UserRole = 'kid') {
+export function useAudioChat(roomCode: string | null, username: string, role: UserRole = 'kid', avatarVariant: 'beam' | 'marble' | 'pixel' | 'sunset' | 'ring' | 'bauhaus' = 'beam') {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [peers, setPeers] = useState<{ [id: string]: MediaStream }>({});
-  const [peerNames, setPeerNames] = useState<{ [id: string]: { name: string, role: UserRole } }>({});
+  const [peerNames, setPeerNames] = useState<{ [id: string]: { name: string, role: UserRole, avatarVariant?: 'beam' | 'marble' | 'pixel' | 'sunset' | 'ring' | 'bauhaus' } }>({});
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [floatingReactions, setFloatingReactions] = useState<Reaction[]>([]);
   const [isMuted, setIsMuted] = useState(false);
@@ -58,6 +58,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
   const channelRef = useRef<RealtimeChannel | null>(null);
   const peerConnections = useRef<{ [id: string]: RTCPeerConnection }>({});
   const actionHistory = useRef<{ type: 'text' | 'sound' | 'reaction', timestamp: number, content?: string }[]>([]);
+  const timeoutCount = useRef(0);
 
   useEffect(() => {
     setIsOnline(typeof window !== 'undefined' ? navigator.onLine : true);
@@ -72,7 +73,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
         channelRef.current.send({
           type: 'broadcast',
           event: 'peer-joined',
-          payload: { peerId: myIdRef.current, peerName: username, peerRole: role }
+          payload: { peerId: myIdRef.current, peerName: username, peerRole: role, avatarVariant }
         });
       }
       
@@ -182,17 +183,27 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
     return () => clearInterval(interval);
   }, [timeoutUntil]);
 
+  const getSpamThreshold = () => {
+    const count = timeoutCount.current;
+    if (count === 0) return 50;
+    if (count === 1) return 40;
+    if (count === 2) return 30;
+    if (count === 3) return 20;
+    return 10;
+  };
+
   const checkSpam = (type: 'text' | 'sound' | 'reaction', content?: string) => {
     const now = Date.now();
     actionHistory.current.push({ type, timestamp: now, content });
     actionHistory.current = actionHistory.current.filter(a => now - a.timestamp < 10000); // keep last 10s
 
     const recentSameType = actionHistory.current.filter(a => a.type === type);
+    const threshold = getSpamThreshold();
 
-    if (type === 'sound' && recentSameType.length > 6) return "spamming sounds 📢";
-    if (type === 'reaction' && recentSameType.length > 8) return "spamming reactions 😂";
+    if (type === 'sound' && recentSameType.length > threshold) return "spamming sounds 📢";
+    if (type === 'reaction' && recentSameType.length > threshold) return "spamming reactions 😂";
     if (type === 'text') {
-      if (recentSameType.length > 6) return "sending too many messages 💬";
+      if (recentSameType.length > threshold) return "sending too many messages 💬";
       const last3 = recentSameType.slice(-3);
       if (last3.length === 3 && last3.every(m => m.content === content)) return "repeating yourself 🦜";
     }
@@ -200,6 +211,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
   };
 
   const applyTimeout = (reason: string) => {
+    timeoutCount.current += 1;
     setTimeoutUntil(Date.now() + 15000); // 15 seconds
     setTimeoutReason(reason);
     
@@ -301,10 +313,10 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
             }
           })
           .on('broadcast', { event: 'peer-joined' }, async ({ payload }) => {
-            const { peerId, peerName, peerRole } = payload;
+            const { peerId, peerName, peerRole, avatarVariant: peerAvatarVariant } = payload;
             if (peerId === myIdRef.current) return;
             
-            setPeerNames(prev => ({ ...prev, [peerId]: { name: peerName || 'Kid', role: peerRole || 'kid' } }));
+            setPeerNames(prev => ({ ...prev, [peerId]: { name: peerName || 'Kid', role: peerRole || 'kid', avatarVariant: peerAvatarVariant || 'beam' } }));
 
             // A new peer joined, let's create a connection and send an offer
             const pc = createPeerConnection(peerId, processedStreamRef.current, channel);
@@ -314,15 +326,15 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
             channel.send({
               type: 'broadcast',
               event: 'signal',
-              payload: { target: peerId, sender: myIdRef.current, senderName: username, senderRole: role, signal: { type: 'offer', sdp: offer } }
+              payload: { target: peerId, sender: myIdRef.current, senderName: username, senderRole: role, avatarVariant, signal: { type: 'offer', sdp: offer } }
             });
           })
           .on('broadcast', { event: 'signal' }, async ({ payload }) => {
-            const { target, sender, senderName, senderRole, signal } = payload;
+            const { target, sender, senderName, senderRole, avatarVariant: senderAvatarVariant, signal } = payload;
             if (target !== myIdRef.current) return;
 
             if (senderName) {
-              setPeerNames(prev => ({ ...prev, [sender]: { name: senderName, role: senderRole || 'kid' } }));
+              setPeerNames(prev => ({ ...prev, [sender]: { name: senderName, role: senderRole || 'kid', avatarVariant: senderAvatarVariant || 'beam' } }));
             }
 
             let pc = peerConnections.current[sender];
@@ -392,7 +404,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
               channel.send({
                 type: 'broadcast',
                 event: 'peer-joined',
-                payload: { peerId: myIdRef.current, peerName: username, peerRole: role }
+                payload: { peerId: myIdRef.current, peerName: username, peerRole: role, avatarVariant }
               });
             } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
               setIsConnected(false);
