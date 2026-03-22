@@ -52,7 +52,6 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
 
   const [myId] = useState(() => Math.random().toString(36).substring(2, 15));
   const myIdRef = useRef(myId);
-  const myIdRef = useRef(myId);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const peerConnections = useRef<{ [id: string]: RTCPeerConnection }>({});
   const actionHistory = useRef<{ type: 'text' | 'sound' | 'reaction', timestamp: number, content?: string }[]>([]);
@@ -278,7 +277,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
             const state = channel.presenceState();
             let kidCount = 0;
             for (const key in state) {
-              const presenceArray = state[key] as { role: UserRole }[];
+              const presenceArray = state[key] as unknown as { role: UserRole }[];
               if (presenceArray[0]?.role === 'kid') {
                 kidCount++;
               }
