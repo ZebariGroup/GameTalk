@@ -739,8 +739,9 @@ export default function Home() {
         className="max-w-md w-full"
       >
         <div className="text-center mb-12 flex flex-col items-center">
-          <img src="/logo.png" alt="Minevine" className="h-24 md:h-32 mb-4 drop-shadow-[0_0_15px_rgba(52,211,153,0.3)]" />
-          <p className="text-slate-400 text-lg">Fun, safe audio chat for gaming.</p>
+          <h1 className="sr-only">Minevine - Safe Audio Chat for Kids Gaming</h1>
+          <img src="/logo.png" alt="Minevine Logo" className="h-24 md:h-32 mb-4 drop-shadow-[0_0_15px_rgba(52,211,153,0.3)]" />
+          <h2 className="text-slate-400 text-lg font-medium">Fun, safe audio chat for gaming.</h2>
         </div>
 
         <div className="bg-slate-800 p-8 rounded-3xl shadow-2xl border border-slate-700 space-y-8">
