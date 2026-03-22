@@ -738,10 +738,8 @@ export default function Home() {
         animate={{ opacity: 1, scale: 1 }}
         className="max-w-md w-full"
       >
-        <div className="text-center mb-12">
-          <h1 className="text-5xl font-black mb-4 bg-gradient-to-r from-emerald-400 to-cyan-400 text-transparent bg-clip-text">
-            GameTalk
-          </h1>
+        <div className="text-center mb-12 flex flex-col items-center">
+          <img src="/logo.png" alt="Minevine" className="h-24 md:h-32 mb-4 drop-shadow-[0_0_15px_rgba(52,211,153,0.3)]" />
           <p className="text-slate-400 text-lg">Fun, safe audio chat for gaming.</p>
         </div>
 
@@ -765,12 +763,11 @@ export default function Home() {
               </motion.div>
               <button 
                 onClick={() => {
-                  setUsername(generateName());
                   setAvatarVariant(AVATAR_VARIANTS[Math.floor(Math.random() * AVATAR_VARIANTS.length)]);
                   setAvatarColors(COLOR_PALETTES[Math.floor(Math.random() * COLOR_PALETTES.length)].colors);
                 }}
                 className="absolute -bottom-2 bg-indigo-500 hover:bg-indigo-400 text-white p-2 rounded-full shadow-lg transition-transform hover:scale-110"
-                title="Randomize Everything!"
+                title="Randomize Avatar!"
               >
                 <Sparkles className="w-5 h-5" />
               </button>
@@ -788,52 +785,6 @@ export default function Home() {
                 </button>
               </div>
               <p className="text-xs text-slate-500 uppercase tracking-widest font-bold">Your Secret Identity</p>
-            </div>
-
-            <div className="space-y-3 text-left">
-              <p className="text-sm font-bold text-slate-400 flex items-center gap-2">
-                <Smile className="w-4 h-4" /> Avatar Style
-              </p>
-              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                {AVATAR_VARIANTS.map(v => (
-                  <button
-                    key={v}
-                    onClick={() => setAvatarVariant(v)}
-                    className={`px-4 py-2 rounded-xl text-sm font-bold capitalize whitespace-nowrap transition-all ${
-                      avatarVariant === v 
-                        ? 'bg-indigo-500 text-white shadow-lg scale-105' 
-                        : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                    }`}
-                  >
-                    {v}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-3 text-left">
-              <p className="text-sm font-bold text-slate-400 flex items-center gap-2">
-                <Palette className="w-4 h-4" /> Color Theme
-              </p>
-              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                {COLOR_PALETTES.map(p => {
-                  const isActive = avatarColors.join() === p.colors.join();
-                  return (
-                    <button
-                      key={p.name}
-                      onClick={() => setAvatarColors(p.colors)}
-                      className={`flex-shrink-0 w-12 h-12 rounded-full flex overflow-hidden border-2 transition-all ${
-                        isActive ? 'border-indigo-400 scale-110 shadow-lg' : 'border-transparent hover:scale-105 opacity-70 hover:opacity-100'
-                      }`}
-                      title={p.name}
-                    >
-                      {p.colors.map(c => (
-                        <div key={c} style={{ backgroundColor: c }} className="flex-1 h-full" />
-                      ))}
-                    </button>
-                  );
-                })}
-              </div>
             </div>
           </div>
 

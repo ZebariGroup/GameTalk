@@ -1,6 +1,6 @@
 {
-  "name": "GameTalk",
-  "short_name": "GameTalk",
+  "name": "Minevine",
+  "short_name": "Minevine",
   "description": "Fun, safe audio chat for gaming.",
   "start_url": "/",
   "display": "standalone",

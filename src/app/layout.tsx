@@ -13,14 +13,14 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "GameTalk",
+  title: "Minevine",
   description: "Fun, safe audio chat for gaming.",
   manifest: "/manifest.json",
   themeColor: "#0f172a",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "GameTalk",
+    title: "Minevine",
   },
 };
 
