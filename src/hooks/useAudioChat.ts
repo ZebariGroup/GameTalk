@@ -520,10 +520,10 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
     // Optimistic update for local user
     if (action === 'start') {
       setActiveMinigame({ type: gameType, starter: username, word: data?.word, guesses: [] });
-    } else if (action === 'guess') {
+    } else if (action === 'guess' && data?.letter) {
       setActiveMinigame(prev => {
         if (!prev || prev.type !== 'word_guess') return prev;
-        return { ...prev, guesses: [...(prev.guesses || []), data.letter] };
+        return { ...prev, guesses: [...(prev.guesses || []), data.letter as string] };
       });
     } else if (action === 'end') {
       setActiveMinigame(null);
