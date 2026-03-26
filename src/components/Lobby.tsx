@@ -147,10 +147,10 @@ export function Lobby({
               <input
                 type="text"
                 value={joinCode}
-                onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                placeholder="ENTER ROOM CODE"
-                className="flex-grow bg-slate-900 border border-slate-700 rounded-2xl px-4 py-4 text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-center text-lg tracking-widest font-bold uppercase"
-                maxLength={20}
+                onChange={(e) => setJoinCode(e.target.value)}
+                placeholder="Enter room code"
+                className="flex-grow bg-slate-900 border border-slate-700 rounded-2xl px-4 py-4 text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-center text-lg tracking-wide font-bold"
+                maxLength={32}
               />
               <button
                 type="submit"

@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { applyVoiceEffect, playSound, VoiceEffect } from '@/lib/audioEffects';
 import { filterProfanity } from '@/lib/moderation';
+import { normalizeRoomCode } from '@/lib/roomCode';
 
 // STUN servers to help peers connect over the internet
 const ICE_SERVERS = {
@@ -258,17 +259,25 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
 
     const initChat = async () => {
       try {
+        const normalizedInputCode = normalizeRoomCode(roomCode);
+        if (!normalizedInputCode) {
+          setError('Invalid room code.');
+          return;
+        }
+
         // 1. Check room max members and expiration in DB
         const { data: roomData, error: roomError } = await supabase
           .from('rooms')
-          .select('max_members, expires_at')
-          .eq('code', roomCode)
-          .single();
+          .select('code, max_members, expires_at')
+          .ilike('code', normalizedInputCode)
+          .maybeSingle();
 
         if (roomError || !roomData) {
           setError('Invalid room code.');
           return;
         }
+
+        const canonicalRoomCode = roomData.code;
 
         if (roomData.expires_at && new Date(roomData.expires_at) < new Date()) {
           setError('This room has expired. Please create a new one.');
@@ -299,7 +308,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
         }
 
         // 3. Join Supabase Channel for signaling
-        const channel = supabase.channel(`room-${roomCode}`, {
+        const channel = supabase.channel(`room-${canonicalRoomCode}`, {
           config: {
             presence: {
               key: myIdRef.current,

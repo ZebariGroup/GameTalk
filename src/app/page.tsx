@@ -28,20 +28,37 @@ export default function Home() {
   const handleCreateRoom = async (maxMembers: number) => {
     setIsCreating(true);
     setError(null);
-    const code = generateRoomCode();
     
     // Calculate expiration time (24 hours from now)
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + 24);
-    
-    // Save room to DB with max members and expiration
-    const { error: dbError } = await supabase.from('rooms').insert([
-      { code, max_members: maxMembers, expires_at: expiresAt.toISOString() }
-    ]);
+
+    let code: string | null = null;
+    let dbError: { code?: string } | null = null;
+
+    // Two-word codes have fewer combinations than the previous format.
+    // Retry on primary-key collisions to keep room creation reliable.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const candidate = generateRoomCode();
+      const { error } = await supabase.from('rooms').insert([
+        { code: candidate, max_members: maxMembers, expires_at: expiresAt.toISOString() }
+      ]);
+
+      if (!error) {
+        code = candidate;
+        dbError = null;
+        break;
+      }
+
+      dbError = error;
+      if (error.code !== '23505') {
+        break;
+      }
+    }
 
     setIsCreating(false);
 
-    if (dbError) {
+    if (dbError || !code) {
       setError("Failed to create room. Please try again.");
       console.error(dbError);
       return;
