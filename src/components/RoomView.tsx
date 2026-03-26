@@ -16,6 +16,7 @@ interface RoomViewProps {
   avatarColors: string[];
   peers: { [id: string]: MediaStream };
   peerNames: { [id: string]: { name: string, role: UserRole, avatarVariant?: any, avatarColors?: string[] } };
+  kidCount: number;
   peerVolumes: { [id: string]: number };
   setPeerVolume: (peerId: string, volume: number) => void;
   peerQuality: { [id: string]: 'good' | 'fair' | 'poor' };
@@ -45,7 +46,7 @@ interface RoomViewProps {
 export function RoomView(props: RoomViewProps) {
   const {
     roomCode, username, role, avatarVariant, avatarColors,
-    peers, peerNames, peerVolumes, setPeerVolume, peerQuality,
+    peers, peerNames, kidCount, peerVolumes, setPeerVolume, peerQuality,
     isMuted, toggleMute, error, isConnected, chatMessages,
     sendMessage, voiceEffect, setVoiceEffect, sendReaction, triggerSound,
     triggerMinigame, activeMinigame, floatingReactions, removeReaction,
@@ -195,7 +196,7 @@ export function RoomView(props: RoomViewProps) {
   const visiblePeers = Object.entries(peers).filter(([id]) => peerNames[id]?.role === 'kid');
 
   return (
-    <div className={`min-h-[100dvh] bg-slate-900 text-white flex flex-col md:flex-row items-center justify-center p-4 gap-6 relative overflow-y-auto md:overflow-hidden ${easterEgg === 'barrel-roll' ? 'animate-barrel-roll' : ''} ${easterEgg === 'shake' ? 'animate-shake' : ''} ${easterEgg === 'matrix' ? 'matrix-mode' : ''}`}>
+    <div className={`min-h-[100dvh] bg-slate-900 text-white flex flex-col md:flex-row items-stretch md:items-center justify-start md:justify-center p-4 pt-14 md:pt-4 gap-6 relative overflow-y-auto md:overflow-hidden ${easterEgg === 'barrel-roll' ? 'animate-barrel-roll' : ''} ${easterEgg === 'shake' ? 'animate-shake' : ''} ${easterEgg === 'matrix' ? 'matrix-mode' : ''}`}>
       
       {/* Network Status Banners */}
       {!isOnline && (
@@ -277,7 +278,7 @@ export function RoomView(props: RoomViewProps) {
       <motion.div 
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
-        className="bg-slate-800 p-6 md:p-8 rounded-3xl shadow-2xl w-full max-w-md text-center border border-slate-700 flex flex-col h-[60vh] md:h-[85vh] shrink-0"
+        className="bg-slate-800 p-6 md:p-8 rounded-3xl shadow-2xl w-full max-w-md self-center text-center border border-slate-700 flex flex-col h-[60vh] md:h-[85vh] min-h-0 shrink-0"
       >
         <h2 className="text-2xl font-bold mb-2 text-slate-300">Room Code</h2>
         <div 
@@ -306,7 +307,7 @@ export function RoomView(props: RoomViewProps) {
         <div className="bg-slate-900 rounded-2xl p-6 mb-4 flex-grow overflow-y-auto">
           <div className="flex items-center justify-center gap-3 mb-6 text-slate-300">
             <Users className="w-5 h-5" />
-            <span className="font-medium">Kids in Chat: {visiblePeers.length + (role === 'kid' ? 1 : 0)}</span>
+            <span className="font-medium">Kids in Chat: {kidCount}</span>
           </div>
           
           <div className="flex justify-center gap-6 flex-wrap">
@@ -460,7 +461,7 @@ export function RoomView(props: RoomViewProps) {
       <motion.div 
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
-        className="bg-slate-800 rounded-3xl shadow-2xl w-full max-w-md border border-slate-700 flex flex-col h-[60vh] md:h-[85vh] overflow-hidden shrink-0"
+        className="bg-slate-800 rounded-3xl shadow-2xl w-full max-w-md self-center border border-slate-700 flex flex-col h-[60vh] md:h-[85vh] min-h-0 overflow-hidden shrink-0"
       >
         {/* Timeout Banner */}
         <AnimatePresence>

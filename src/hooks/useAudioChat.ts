@@ -44,6 +44,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [peers, setPeers] = useState<{ [id: string]: MediaStream }>({});
   const [peerNames, setPeerNames] = useState<{ [id: string]: { name: string, role: UserRole, avatarVariant?: 'beam' | 'marble' | 'pixel' | 'sunset' | 'ring' | 'bauhaus', avatarColors?: string[] } }>({});
+  const [kidCount, setKidCount] = useState(role === 'kid' ? 1 : 0);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [floatingReactions, setFloatingReactions] = useState<Reaction[]>([]);
   const [isMuted, setIsMuted] = useState(false);
@@ -78,12 +79,8 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
       
       // Re-announce presence to trigger WebRTC reconnections
       if (channelRef.current && isConnected) {
-        channelRef.current.track({ role });
-        channelRef.current.send({
-          type: 'broadcast',
-          event: 'peer-joined',
-          payload: { peerId: myIdRef.current, peerName: username, peerRole: role, avatarVariant, avatarColors }
-        });
+        channelRef.current.track({ role, peerName: username, avatarVariant, avatarColors });
+        announcePresence(channelRef.current);
       }
       
       setTimeout(() => setIsReconnecting(false), 3000);
@@ -190,6 +187,14 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
     }
 
     delete pendingIceCandidates.current[peerId];
+  };
+
+  const announcePresence = (channel: RealtimeChannel) => {
+    channel.send({
+      type: 'broadcast',
+      event: 'peer-joined',
+      payload: { peerId: myIdRef.current, peerName: username, peerRole: role, avatarVariant, avatarColors }
+    });
   };
 
   useEffect(() => {
@@ -335,16 +340,66 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
         channel
           .on('presence', { event: 'sync' }, () => {
             const state = channel.presenceState();
-            let kidCount = 0;
+            let nextKidCount = 0;
             for (const key in state) {
-              const presenceArray = state[key] as unknown as { role: UserRole }[];
-              if (presenceArray[0]?.role === 'kid') {
-                kidCount++;
+              const presenceArray = state[key] as unknown as {
+                role?: UserRole;
+                peerName?: string;
+                avatarVariant?: 'beam' | 'marble' | 'pixel' | 'sunset' | 'ring' | 'bauhaus';
+                avatarColors?: string[];
+              }[];
+              const presence = presenceArray[0];
+
+              if (presence?.role === 'kid') {
+                nextKidCount++;
+              }
+
+              if (key !== myIdRef.current && presence?.peerName) {
+                const resolvedPeerName = presence.peerName || 'Kid';
+                setPeerNames(prev => ({
+                  ...prev,
+                  [key]: {
+                    name: resolvedPeerName,
+                    role: presence.role || 'kid',
+                    avatarVariant: presence.avatarVariant || 'beam',
+                    avatarColors: presence.avatarColors,
+                  }
+                }));
+              }
+
+              if (
+                key !== myIdRef.current &&
+                myIdRef.current < key &&
+                !peerConnections.current[key]
+              ) {
+                void (async () => {
+                  const pc = createPeerConnection(key, processedStreamRef.current, channel);
+                  const offer = await pc.createOffer();
+                  await pc.setLocalDescription(offer);
+
+                  channel.send({
+                    type: 'broadcast',
+                    event: 'signal',
+                    payload: {
+                      target: key,
+                      sender: myIdRef.current,
+                      senderName: username,
+                      senderRole: role,
+                      avatarVariant,
+                      avatarColors,
+                      signal: { type: 'offer', sdp: offer }
+                    }
+                  });
+                })().catch((err) => {
+                  console.error('Error creating peer offer from presence sync:', err);
+                  removePeer(key);
+                });
               }
             }
+            setKidCount(nextKidCount);
             
             // If we are a kid and we pushed the count over the limit, we must leave
-            if (role === 'kid' && kidCount > maxMembers) {
+            if (role === 'kid' && nextKidCount > maxMembers) {
               setError(`This room is full (Max ${maxMembers} kids).`);
               channel.unsubscribe();
               if (stream) {
@@ -357,20 +412,6 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
             if (peerId === myIdRef.current) return;
             
             setPeerNames(prev => ({ ...prev, [peerId]: { name: peerName || 'Kid', role: peerRole || 'kid', avatarVariant: peerAvatarVariant || 'beam', avatarColors: peerAvatarColors } }));
-
-            // A new peer joined, let's create a connection and send an offer
-            let pc = peerConnections.current[peerId];
-            if (!pc || pc.signalingState === 'closed' || pc.iceConnectionState === 'failed') {
-              pc = createPeerConnection(peerId, processedStreamRef.current, channel);
-            }
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            
-            channel.send({
-              type: 'broadcast',
-              event: 'signal',
-              payload: { target: peerId, sender: myIdRef.current, senderName: username, senderRole: role, avatarVariant, avatarColors, signal: { type: 'offer', sdp: offer } }
-            });
           })
           .on('broadcast', { event: 'signal' }, async ({ payload }) => {
             const { target, sender, senderName, senderRole, avatarVariant: senderAvatarVariant, avatarColors: senderAvatarColors, signal } = payload;
@@ -458,14 +499,10 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
               setIsReconnecting(false);
               
               // Track presence for counting max members
-              await channel.track({ role });
+              await channel.track({ role, peerName: username, avatarVariant, avatarColors });
 
               // Announce we have joined for WebRTC signaling
-              channel.send({
-                type: 'broadcast',
-                event: 'peer-joined',
-                payload: { peerId: myIdRef.current, peerName: username, peerRole: role, avatarVariant, avatarColors }
-              });
+              announcePresence(channel);
             } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
               if (cleaningUp || !mounted) return;
               setIsConnected(false);
@@ -746,6 +783,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
     localStream,
     peers,
     peerNames,
+    kidCount,
     peerVolumes,
     setPeerVolume,
     peerQuality,
