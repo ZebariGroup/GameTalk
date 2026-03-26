@@ -196,7 +196,7 @@ export function RoomView(props: RoomViewProps) {
   const visiblePeers = Object.entries(peers).filter(([id]) => peerNames[id]?.role === 'kid');
 
   return (
-    <div className={`min-h-[100dvh] bg-slate-900 text-white flex flex-col md:flex-row items-stretch md:items-center justify-start md:justify-center p-4 pt-14 md:pt-4 gap-6 relative overflow-y-auto md:overflow-hidden ${easterEgg === 'barrel-roll' ? 'animate-barrel-roll' : ''} ${easterEgg === 'shake' ? 'animate-shake' : ''} ${easterEgg === 'matrix' ? 'matrix-mode' : ''}`}>
+    <div className={`h-[100dvh] bg-slate-900 text-white flex flex-col md:flex-row items-stretch md:items-center justify-start md:justify-center p-4 pt-14 md:pt-4 gap-4 md:gap-6 relative overflow-hidden ${easterEgg === 'barrel-roll' ? 'animate-barrel-roll' : ''} ${easterEgg === 'shake' ? 'animate-shake' : ''} ${easterEgg === 'matrix' ? 'matrix-mode' : ''}`}>
       
       {/* Network Status Banners */}
       {!isOnline && (
@@ -278,7 +278,7 @@ export function RoomView(props: RoomViewProps) {
       <motion.div 
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
-        className="bg-slate-800 p-6 md:p-8 rounded-3xl shadow-2xl w-full max-w-md self-center text-center border border-slate-700 flex flex-col h-[60vh] md:h-[85vh] min-h-0 shrink-0"
+        className="bg-slate-800 p-4 md:p-8 rounded-3xl shadow-2xl w-full max-w-md self-center text-center border border-slate-700 flex flex-col flex-shrink md:flex-1 md:h-[85vh] min-h-0"
       >
         <h2 className="text-2xl font-bold mb-2 text-slate-300">Room Code</h2>
         <div 
@@ -304,7 +304,7 @@ export function RoomView(props: RoomViewProps) {
           {isConnected ? 'Connected' : 'Connecting...'}
         </div>
 
-        <div className="bg-slate-900 rounded-2xl p-6 mb-4 flex-grow overflow-y-auto">
+        <div className="bg-slate-900 rounded-2xl p-4 md:p-6 mb-4 flex-grow overflow-y-auto min-h-[120px] md:min-h-0">
           <div className="flex items-center justify-center gap-3 mb-6 text-slate-300">
             <Users className="w-5 h-5" />
             <span className="font-medium">Kids in Chat: {kidCount}</span>
@@ -461,7 +461,7 @@ export function RoomView(props: RoomViewProps) {
       <motion.div 
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
-        className="bg-slate-800 rounded-3xl shadow-2xl w-full max-w-md self-center border border-slate-700 flex flex-col h-[60vh] md:h-[85vh] min-h-0 overflow-hidden shrink-0"
+        className="bg-slate-800 rounded-3xl shadow-2xl w-full max-w-md self-center border border-slate-700 flex flex-col flex-1 md:h-[85vh] min-h-0 overflow-hidden"
       >
         {/* Timeout Banner */}
         <AnimatePresence>

@@ -127,13 +127,23 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
       pc.addTransceiver('audio', { direction: 'recvonly' });
     }
 
+    let candidateBatch: RTCIceCandidateInit[] = [];
+    let batchTimeout: NodeJS.Timeout | null = null;
+
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        channel.send({
-          type: 'broadcast',
-          event: 'signal',
-          payload: { target: peerId, sender: myIdRef.current, signal: { candidate: event.candidate } }
-        });
+        candidateBatch.push(event.candidate.toJSON());
+        if (!batchTimeout) {
+          batchTimeout = setTimeout(() => {
+            channel.send({
+              type: 'broadcast',
+              event: 'signal',
+              payload: { target: peerId, sender: myIdRef.current, signal: { candidates: candidateBatch } }
+            });
+            candidateBatch = [];
+            batchTimeout = null;
+          }, 300);
+        }
       }
     };
 
@@ -441,6 +451,24 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
               if (pc) {
                 await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
                 await flushPendingIceCandidates(sender, pc);
+              }
+            } else if (signal.candidates) {
+              if (pc) {
+                if (pc.remoteDescription) {
+                  for (const c of signal.candidates) {
+                    await pc.addIceCandidate(new RTCIceCandidate(c));
+                  }
+                } else {
+                  pendingIceCandidates.current[sender] = [
+                    ...(pendingIceCandidates.current[sender] || []),
+                    ...signal.candidates,
+                  ];
+                }
+              } else {
+                pendingIceCandidates.current[sender] = [
+                  ...(pendingIceCandidates.current[sender] || []),
+                  ...signal.candidates,
+                ];
               }
             } else if (signal.candidate) {
               if (pc) {
