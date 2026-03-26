@@ -64,6 +64,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
   const myIdRef = useRef(myId);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const peerConnections = useRef<{ [id: string]: RTCPeerConnection }>({});
+  const pendingIceCandidates = useRef<{ [id: string]: RTCIceCandidateInit[] }>({});
   const disconnectTimers = useRef<{ [id: string]: NodeJS.Timeout }>({});
   const actionHistory = useRef<{ type: 'text' | 'sound' | 'reaction', timestamp: number, content?: string }[]>([]);
   const timeoutCount = useRef(0);
@@ -180,6 +181,17 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
     return pc;
   };
 
+  const flushPendingIceCandidates = async (peerId: string, pc: RTCPeerConnection) => {
+    const queued = pendingIceCandidates.current[peerId];
+    if (!queued?.length || !pc.remoteDescription) return;
+
+    for (const candidate of queued) {
+      await pc.addIceCandidate(new RTCIceCandidate(candidate));
+    }
+
+    delete pendingIceCandidates.current[peerId];
+  };
+
   useEffect(() => {
     if (!timeoutUntil) {
       setTimeLeft(0);
@@ -256,6 +268,8 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
     if (!roomCode) return;
 
     let mounted = true;
+    let cleaningUp = false;
+    let effectChannel: RealtimeChannel | null = null;
 
     const initChat = async () => {
       try {
@@ -315,6 +329,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
             },
           },
         });
+        effectChannel = channel;
         channelRef.current = channel;
 
         channel
@@ -344,7 +359,10 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
             setPeerNames(prev => ({ ...prev, [peerId]: { name: peerName || 'Kid', role: peerRole || 'kid', avatarVariant: peerAvatarVariant || 'beam', avatarColors: peerAvatarColors } }));
 
             // A new peer joined, let's create a connection and send an offer
-            const pc = createPeerConnection(peerId, processedStreamRef.current, channel);
+            let pc = peerConnections.current[peerId];
+            if (!pc || pc.signalingState === 'closed' || pc.iceConnectionState === 'failed') {
+              pc = createPeerConnection(peerId, processedStreamRef.current, channel);
+            }
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
             
@@ -369,6 +387,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
                 pc = createPeerConnection(sender, processedStreamRef.current, channel);
               }
               await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+              await flushPendingIceCandidates(sender, pc);
               const answer = await pc.createAnswer();
               await pc.setLocalDescription(answer);
               
@@ -380,10 +399,23 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
             } else if (signal.type === 'answer') {
               if (pc) {
                 await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+                await flushPendingIceCandidates(sender, pc);
               }
             } else if (signal.candidate) {
               if (pc) {
-                await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+                if (pc.remoteDescription) {
+                  await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+                } else {
+                  pendingIceCandidates.current[sender] = [
+                    ...(pendingIceCandidates.current[sender] || []),
+                    signal.candidate as RTCIceCandidateInit,
+                  ];
+                }
+              } else {
+                pendingIceCandidates.current[sender] = [
+                  ...(pendingIceCandidates.current[sender] || []),
+                  signal.candidate as RTCIceCandidateInit,
+                ];
               }
             }
           })
@@ -435,6 +467,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
                 payload: { peerId: myIdRef.current, peerName: username, peerRole: role, avatarVariant, avatarColors }
               });
             } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+              if (cleaningUp || !mounted) return;
               setIsConnected(false);
               setIsReconnecting(true);
             }
@@ -450,18 +483,24 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
 
     return () => {
       mounted = false;
-      if (channelRef.current) {
-        channelRef.current.send({
+      cleaningUp = true;
+      const activeChannel = effectChannel;
+      if (activeChannel) {
+        activeChannel.send({
           type: 'broadcast',
           event: 'peer-left',
           payload: { peerId: myIdRef.current }
         });
-        channelRef.current.untrack();
-        supabase.removeChannel(channelRef.current);
+        activeChannel.untrack();
+        supabase.removeChannel(activeChannel);
+        if (channelRef.current === activeChannel) {
+          channelRef.current = null;
+        }
       }
       
       Object.values(peerConnections.current).forEach(pc => pc.close());
       peerConnections.current = {};
+      pendingIceCandidates.current = {};
       
       Object.values(disconnectTimers.current).forEach(timer => clearTimeout(timer));
       disconnectTimers.current = {};

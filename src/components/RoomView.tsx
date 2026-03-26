@@ -65,7 +65,7 @@ export function RoomView(props: RoomViewProps) {
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
   const customAudioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
@@ -132,7 +132,13 @@ export function RoomView(props: RoomViewProps) {
   };
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const chatScrollEl = chatScrollRef.current;
+    if (chatScrollEl) {
+      chatScrollEl.scrollTo({
+        top: chatScrollEl.scrollHeight,
+        behavior: 'smooth',
+      });
+    }
     
     if (chatMessages.length > 0) {
       const lastMsg = chatMessages[chatMessages.length - 1];
@@ -751,7 +757,7 @@ export function RoomView(props: RoomViewProps) {
           </div>
         )}
 
-        <div className="flex-grow p-4 overflow-y-auto space-y-4 bg-slate-800/50">
+        <div ref={chatScrollRef} className="flex-grow p-4 overflow-y-auto space-y-4 bg-slate-800/50">
           {chatMessages.length === 0 ? (
             <div className="h-full flex items-center justify-center text-slate-500 text-sm italic">
               No messages yet. Say hi! 👋
@@ -771,7 +777,6 @@ export function RoomView(props: RoomViewProps) {
               );
             })
           )}
-          <div ref={chatEndRef} />
         </div>
 
         <form onSubmit={handleSendMessage} className="p-4 bg-slate-900 border-t border-slate-700 flex gap-2 relative z-40">
