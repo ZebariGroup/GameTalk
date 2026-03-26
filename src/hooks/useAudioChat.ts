@@ -79,7 +79,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
       
       // Re-announce presence to trigger WebRTC reconnections
       if (channelRef.current && isConnected) {
-        channelRef.current.track({ role, peerName: username, avatarVariant, avatarColors });
+        channelRef.current.track({ role, peerName: username || 'Kid' });
         announcePresence(channelRef.current);
       }
       
@@ -97,7 +97,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, [isConnected, role, username]);
+  }, [avatarColors, avatarVariant, isConnected, role, username]);
 
   const removePeer = (peerId: string) => {
     if (disconnectTimers.current[peerId]) {
@@ -203,7 +203,45 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
     channel.send({
       type: 'broadcast',
       event: 'peer-joined',
-      payload: { peerId: myIdRef.current, peerName: username, peerRole: role, avatarVariant, avatarColors }
+      payload: { peerId: myIdRef.current, peerName: username || 'Kid', peerRole: role, avatarVariant, avatarColors }
+    });
+  };
+
+  const startOfferForPeer = async (peerId: string, channel: RealtimeChannel) => {
+    if (peerId === myIdRef.current) return;
+    // Deterministic initiator to avoid offer glare.
+    if (myIdRef.current > peerId) return;
+
+    const existingPc = peerConnections.current[peerId];
+    const hasViableConnection =
+      existingPc &&
+      existingPc.signalingState !== 'closed' &&
+      existingPc.iceConnectionState !== 'failed' &&
+      existingPc.iceConnectionState !== 'closed';
+
+    if (hasViableConnection) return;
+
+    if (existingPc) {
+      existingPc.close();
+      delete peerConnections.current[peerId];
+    }
+
+    const pc = createPeerConnection(peerId, processedStreamRef.current, channel);
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    channel.send({
+      type: 'broadcast',
+      event: 'signal',
+      payload: {
+        target: peerId,
+        sender: myIdRef.current,
+        senderName: username || 'Kid',
+        senderRole: role,
+        avatarVariant,
+        avatarColors,
+        signal: { type: 'offer', sdp: offer }
+      }
     });
   };
 
@@ -364,43 +402,21 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
                 nextKidCount++;
               }
 
-              if (key !== myIdRef.current && presence?.peerName) {
-                const resolvedPeerName = presence.peerName || 'Kid';
+              if (key !== myIdRef.current) {
+                const resolvedPeerName = presence?.peerName || 'Kid';
                 setPeerNames(prev => ({
                   ...prev,
                   [key]: {
                     name: resolvedPeerName,
-                    role: presence.role || 'kid',
-                    avatarVariant: presence.avatarVariant || 'beam',
-                    avatarColors: presence.avatarColors,
+                    role: presence?.role || 'kid',
+                    avatarVariant: presence?.avatarVariant || 'beam',
+                    avatarColors: presence?.avatarColors,
                   }
                 }));
               }
 
-              if (
-                key !== myIdRef.current &&
-                myIdRef.current < key &&
-                !peerConnections.current[key]
-              ) {
-                void (async () => {
-                  const pc = createPeerConnection(key, processedStreamRef.current, channel);
-                  const offer = await pc.createOffer();
-                  await pc.setLocalDescription(offer);
-
-                  channel.send({
-                    type: 'broadcast',
-                    event: 'signal',
-                    payload: {
-                      target: key,
-                      sender: myIdRef.current,
-                      senderName: username,
-                      senderRole: role,
-                      avatarVariant,
-                      avatarColors,
-                      signal: { type: 'offer', sdp: offer }
-                    }
-                  });
-                })().catch((err) => {
+              if (key !== myIdRef.current) {
+                void startOfferForPeer(key, channel).catch((err) => {
                   console.error('Error creating peer offer from presence sync:', err);
                   removePeer(key);
                 });
@@ -422,6 +438,8 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
             if (peerId === myIdRef.current) return;
             
             setPeerNames(prev => ({ ...prev, [peerId]: { name: peerName || 'Kid', role: peerRole || 'kid', avatarVariant: peerAvatarVariant || 'beam', avatarColors: peerAvatarColors } }));
+            // Fallback path in case presence sync is delayed/missed.
+            await startOfferForPeer(peerId, channel);
           })
           .on('broadcast', { event: 'signal' }, async ({ payload }) => {
             const { target, sender, senderName, senderRole, avatarVariant: senderAvatarVariant, avatarColors: senderAvatarColors, signal } = payload;
@@ -527,7 +545,11 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
               setIsReconnecting(false);
               
               // Track presence for counting max members
-              await channel.track({ role, peerName: username, avatarVariant, avatarColors });
+              try {
+                await channel.track({ role, peerName: username || 'Kid' });
+              } catch (presenceErr) {
+                console.error('Presence track failed:', presenceErr);
+              }
 
               // Announce we have joined for WebRTC signaling
               announcePresence(channel);
