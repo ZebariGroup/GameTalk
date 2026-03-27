@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -57,12 +57,16 @@ export const metadata: Metadata = {
     creator: "@minevine",
   },
   manifest: "/manifest.json",
-  themeColor: "#0f172a",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "Minevine",
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0f172a",
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -75,7 +79,7 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full min-h-[100dvh] flex flex-col overscroll-none">{children}</body>
     </html>
   );
 }

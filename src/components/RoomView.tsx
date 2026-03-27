@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mic, MicOff, PhoneOff, Users, Copy, Check, Send, Smile, Eye, Wifi } from 'lucide-react';
+import { Mic, MicOff, PhoneOff, Users, Copy, Check, Send, Smile, Eye, Wifi, MessageSquare } from 'lucide-react';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
 import confetti from 'canvas-confetti';
 import Avatar from 'boring-avatars';
@@ -66,6 +66,8 @@ export function RoomView(props: RoomViewProps) {
   const [customSound, setCustomSound] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
+  /** On small screens, show one panel at a time so users are not stuck scrolling past audio to reach chat. */
+  const [mobileTab, setMobileTab] = useState<'room' | 'chat'>('room');
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const chatScrollRef = useRef<HTMLDivElement>(null);
@@ -199,8 +201,19 @@ export function RoomView(props: RoomViewProps) {
 
   const visiblePeers = Object.entries(peers).filter(([id]) => peerNames[id]?.role === 'kid');
 
+  const eggClass =
+    easterEgg === 'barrel-roll'
+      ? 'animate-barrel-roll'
+      : easterEgg === 'shake'
+        ? 'animate-shake'
+        : easterEgg === 'matrix'
+          ? 'matrix-mode'
+          : '';
+
   return (
-    <div className={`h-[100dvh] bg-slate-900 text-white flex flex-col md:flex-row items-stretch md:items-center justify-start md:justify-center p-4 pt-14 md:pt-4 gap-4 md:gap-6 relative overflow-hidden ${easterEgg === 'barrel-roll' ? 'animate-barrel-roll' : ''} ${easterEgg === 'shake' ? 'animate-shake' : ''} ${easterEgg === 'matrix' ? 'matrix-mode' : ''}`}>
+    <div
+      className={`h-[100dvh] bg-slate-900 text-white flex flex-col relative overflow-hidden ${eggClass}`}
+    >
       
       {/* Network Status Banners */}
       {!isOnline && (
@@ -278,20 +291,23 @@ export function RoomView(props: RoomViewProps) {
         </AnimatePresence>
       </div>
 
+      <div className="flex flex-1 flex-col min-h-0 md:flex-row md:items-stretch md:justify-center px-3 md:px-4 pt-[max(0.5rem,env(safe-area-inset-top))] md:pt-4 gap-3 md:gap-6">
       {/* Left Column: Audio & Controls */}
       <motion.div 
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
-        className="bg-slate-800 p-4 md:p-8 rounded-3xl shadow-2xl w-full max-w-md self-center text-center border border-slate-700 flex flex-col flex-shrink md:flex-1 md:h-[85vh] min-h-0"
+        className={`bg-slate-800 p-3 sm:p-4 md:p-8 rounded-2xl md:rounded-3xl shadow-2xl w-full max-w-md md:self-center text-center border border-slate-700 flex flex-col min-h-0 overflow-y-auto md:overflow-visible md:flex-1 md:h-[85vh] ${
+          mobileTab === 'room' ? 'flex flex-1' : 'hidden md:flex'
+        }`}
       >
-        <h2 className="text-2xl font-bold mb-2 text-slate-300">Room Code</h2>
+        <h2 className="text-xl sm:text-2xl font-bold mb-2 text-slate-300">Room Code</h2>
         <div 
           onClick={copyCode}
           role="button"
           tabIndex={0}
           onKeyDown={(e) => e.key === 'Enter' && copyCode()}
           aria-label="Copy room code"
-          className="bg-slate-900 p-4 rounded-xl text-3xl font-black text-emerald-400 mb-4 cursor-pointer hover:bg-slate-950 transition-colors flex items-center justify-center gap-3 group"
+          className="bg-slate-900 p-3 sm:p-4 rounded-xl text-2xl sm:text-3xl font-black text-emerald-400 mb-3 sm:mb-4 cursor-pointer active:bg-slate-950 transition-colors flex items-center justify-center gap-3 group min-h-[52px]"
         >
           {roomCode}
           {copied ? <Check className="w-6 h-6 text-emerald-400" /> : <Copy className="w-6 h-6 text-slate-500 group-hover:text-emerald-400 transition-colors" />}
@@ -308,8 +324,8 @@ export function RoomView(props: RoomViewProps) {
           {isConnected ? 'Connected' : 'Connecting...'}
         </div>
 
-        <div className="bg-slate-900 rounded-2xl p-4 md:p-6 mb-4 flex-grow overflow-y-auto min-h-[120px] md:min-h-0">
-          <div className="flex items-center justify-center gap-3 mb-6 text-slate-300">
+        <div className="bg-slate-900 rounded-2xl p-3 sm:p-4 md:p-6 mb-3 sm:mb-4 flex-grow overflow-y-auto min-h-[100px] md:min-h-0">
+          <div className="flex items-center justify-center gap-3 mb-4 sm:mb-6 text-slate-300">
             <Users className="w-5 h-5" />
             <span className="font-medium">Kids in Chat: {kidCount}</span>
           </div>
@@ -393,7 +409,7 @@ export function RoomView(props: RoomViewProps) {
                     step="0.1" 
                     value={peerVolumes[id] ?? 1}
                     onChange={(e) => setPeerVolume(id, parseFloat(e.target.value))}
-                    className="w-16 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                    className="w-24 sm:w-16 h-2 sm:h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500 touch-pan-y"
                     title={`Volume for ${peerName}`}
                   />
                 </motion.div>
@@ -404,15 +420,15 @@ export function RoomView(props: RoomViewProps) {
 
         {role === 'kid' && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between bg-slate-900 p-3 rounded-xl border border-slate-700">
-              <label htmlFor="voiceEffect" className="text-sm font-medium text-slate-300">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between bg-slate-900 p-3 rounded-xl border border-slate-700">
+              <label htmlFor="voiceEffect" className="text-sm font-medium text-slate-300 text-left sm:text-right">
                 Voice Changer:
               </label>
               <select
                 id="voiceEffect"
                 value={voiceEffect}
                 onChange={(e) => setVoiceEffect(e.target.value as VoiceEffect)}
-                className="bg-slate-800 border border-slate-600 text-white text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2"
+                className="w-full sm:w-auto min-h-[44px] bg-slate-800 border border-slate-600 text-white text-base sm:text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block px-3 py-2"
               >
                 <option value="none">Normal 🗣️</option>
                 <option value="robot">Robot 🤖</option>
@@ -424,13 +440,14 @@ export function RoomView(props: RoomViewProps) {
               </select>
             </div>
 
-            <div className="flex gap-4">
+            <div className="flex gap-3 sm:gap-4">
               <button
+                type="button"
                 onClick={toggleMute}
-                className={`flex-1 py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg ${
+                className={`flex-1 min-h-[52px] py-3 sm:py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg active:scale-[0.98] ${
                   isMuted 
-                    ? 'bg-red-500 hover:bg-red-600 text-white shadow-red-500/20' 
-                    : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20'
+                    ? 'bg-red-500 active:bg-red-600 text-white shadow-red-500/20' 
+                    : 'bg-emerald-500 active:bg-emerald-600 text-white shadow-emerald-500/20'
                 }`}
               >
                 {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
@@ -438,8 +455,9 @@ export function RoomView(props: RoomViewProps) {
               </button>
               
               <button
+                type="button"
                 onClick={() => setShowLeaveConfirm(true)}
-                className="py-4 px-6 bg-slate-700 hover:bg-red-500 text-white rounded-2xl font-bold transition-colors shadow-lg flex items-center justify-center"
+                className="min-h-[52px] min-w-[52px] shrink-0 py-3 px-5 bg-slate-700 active:bg-red-500 text-white rounded-2xl font-bold transition-colors shadow-lg flex items-center justify-center"
                 title="Leave Room"
               >
                 <PhoneOff className="w-6 h-6" />
@@ -451,8 +469,9 @@ export function RoomView(props: RoomViewProps) {
         {role === 'observer' && (
           <div className="mt-auto">
             <button
+              type="button"
               onClick={() => setShowLeaveConfirm(true)}
-              className="w-full py-4 px-6 bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white border border-red-500/50 rounded-2xl font-bold transition-colors shadow-lg flex items-center justify-center gap-2"
+              className="w-full min-h-[52px] py-3.5 px-6 bg-red-500/20 active:bg-red-500 text-red-400 active:text-white border border-red-500/50 rounded-2xl font-bold transition-colors shadow-lg flex items-center justify-center gap-2"
             >
               <PhoneOff className="w-6 h-6" />
               Leave Observation
@@ -465,7 +484,9 @@ export function RoomView(props: RoomViewProps) {
       <motion.div 
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
-        className="bg-slate-800 rounded-3xl shadow-2xl w-full max-w-md self-center border border-slate-700 flex flex-col flex-1 md:h-[85vh] min-h-0 overflow-hidden"
+        className={`bg-slate-800 rounded-2xl md:rounded-3xl shadow-2xl w-full max-w-md md:self-center border border-slate-700 flex flex-col min-h-0 overflow-hidden md:flex-1 md:h-[85vh] ${
+          mobileTab === 'chat' ? 'flex flex-1' : 'hidden md:flex'
+        }`}
       >
         {/* Timeout Banner */}
         <AnimatePresence>
@@ -519,13 +540,14 @@ export function RoomView(props: RoomViewProps) {
 
         {/* Soundboard & Minigames (Only for kids) */}
         {role === 'kid' && (
-          <div className="p-4 bg-slate-900 border-b border-slate-700 flex flex-wrap gap-2 shrink-0 z-10">
+          <div className="p-2 sm:p-4 bg-slate-900 border-b border-slate-700 flex flex-nowrap overflow-x-auto gap-2 shrink-0 z-10 touch-pan-x [scrollbar-width:thin]">
             
             {/* Minigames Dropdown */}
             <div className="relative dropdown-container">
               <button 
+                type="button"
                 onClick={() => toggleDropdown('minigames')}
-                className="px-4 py-2 bg-indigo-500 hover:bg-indigo-400 text-white rounded-xl text-sm font-bold transition-colors flex items-center gap-2"
+                className="shrink-0 px-3 sm:px-4 py-2 min-h-[44px] bg-indigo-500 active:bg-indigo-400 text-white rounded-xl text-sm font-bold transition-colors flex items-center gap-2 whitespace-nowrap"
               >
                 🎮 Minigames
               </button>
@@ -535,7 +557,7 @@ export function RoomView(props: RoomViewProps) {
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 10 }}
-                    className="absolute top-full left-0 mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-xl p-3 w-64 z-50"
+                    className="absolute top-full left-0 mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-xl p-3 w-[min(92vw,16rem)] max-h-[min(50vh,280px)] overflow-y-auto z-50"
                   >
                     {!showWordInput && !activeMinigame ? (
                       <button 
@@ -586,8 +608,9 @@ export function RoomView(props: RoomViewProps) {
             {/* Funny Sounds Dropdown */}
             <div className="relative dropdown-container">
               <button 
+                type="button"
                 onClick={() => toggleDropdown('sounds')}
-                className="px-4 py-2 bg-purple-500 hover:bg-purple-400 text-white rounded-xl text-sm font-bold transition-colors flex items-center gap-2"
+                className="shrink-0 px-3 sm:px-4 py-2 min-h-[44px] bg-purple-500 active:bg-purple-400 text-white rounded-xl text-sm font-bold transition-colors flex items-center gap-2 whitespace-nowrap"
               >
                 🎵 Sounds
               </button>
@@ -597,7 +620,7 @@ export function RoomView(props: RoomViewProps) {
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 10 }}
-                    className="absolute top-full left-0 mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-xl p-2 w-48 z-50 flex flex-col gap-1"
+                    className="absolute top-full left-0 mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-xl p-2 w-[min(92vw,12rem)] max-h-[min(50vh,280px)] overflow-y-auto z-50 flex flex-col gap-1"
                   >
                     <button onClick={() => { triggerSound('laser'); setActiveDropdown(null); }} className="w-full text-left px-3 py-2 hover:bg-slate-700 rounded-lg text-white text-sm flex items-center gap-2">🔫 Laser</button>
                     <button onClick={() => { triggerSound('magic'); setActiveDropdown(null); }} className="w-full text-left px-3 py-2 hover:bg-slate-700 rounded-lg text-white text-sm flex items-center gap-2">✨ Magic</button>
@@ -612,8 +635,9 @@ export function RoomView(props: RoomViewProps) {
             {/* Game Sounds Dropdown */}
             <div className="relative dropdown-container">
               <button 
+                type="button"
                 onClick={() => toggleDropdown('game_sounds')}
-                className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-white rounded-xl text-sm font-bold transition-colors flex items-center gap-2"
+                className="shrink-0 px-3 sm:px-4 py-2 min-h-[44px] bg-emerald-500 active:bg-emerald-400 text-white rounded-xl text-sm font-bold transition-colors flex items-center gap-2 whitespace-nowrap"
               >
                 🎮 FX
               </button>
@@ -623,7 +647,7 @@ export function RoomView(props: RoomViewProps) {
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 10 }}
-                    className="absolute top-full left-0 mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-xl p-2 w-48 z-50 flex flex-col gap-1"
+                    className="absolute top-full left-0 mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-xl p-2 w-[min(92vw,12rem)] max-h-[min(50vh,280px)] overflow-y-auto z-50 flex flex-col gap-1"
                   >
                     <button onClick={() => { triggerSound('mc_break'); setActiveDropdown(null); }} className="w-full text-left px-3 py-2 hover:bg-slate-700 rounded-lg text-white text-sm flex items-center gap-2">⛏️ Block Break</button>
                     <button onClick={() => { triggerSound('fn_shield'); setActiveDropdown(null); }} className="w-full text-left px-3 py-2 hover:bg-slate-700 rounded-lg text-white text-sm flex items-center gap-2">🛡️ Shield Pop</button>
@@ -638,8 +662,9 @@ export function RoomView(props: RoomViewProps) {
             {/* Reactions Dropdown */}
             <div className="relative dropdown-container">
               <button 
+                type="button"
                 onClick={() => toggleDropdown('reactions')}
-                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-white rounded-xl text-sm font-bold transition-colors flex items-center gap-2"
+                className="shrink-0 px-3 sm:px-4 py-2 min-h-[44px] bg-amber-500 active:bg-amber-400 text-white rounded-xl text-sm font-bold transition-colors flex items-center gap-2 whitespace-nowrap"
               >
                 😂 React
               </button>
@@ -649,7 +674,7 @@ export function RoomView(props: RoomViewProps) {
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 10 }}
-                    className="absolute top-full left-0 mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-xl p-3 w-48 z-50 grid grid-cols-3 gap-2"
+                    className="absolute top-full left-0 mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-xl p-3 w-[min(92vw,12rem)] max-h-[min(50vh,280px)] overflow-y-auto z-50 grid grid-cols-3 gap-2"
                   >
                     <button onClick={() => { sendReaction('😂'); setActiveDropdown(null); }} className="h-12 bg-slate-700 hover:bg-slate-600 rounded-lg text-2xl flex items-center justify-center transition-transform hover:scale-110">😂</button>
                     <button onClick={() => { sendReaction('❤️'); setActiveDropdown(null); }} className="h-12 bg-slate-700 hover:bg-slate-600 rounded-lg text-2xl flex items-center justify-center transition-transform hover:scale-110">❤️</button>
@@ -665,8 +690,9 @@ export function RoomView(props: RoomViewProps) {
             {/* Stickers Dropdown */}
             <div className="relative dropdown-container">
               <button 
+                type="button"
                 onClick={() => toggleDropdown('stickers')}
-                className="px-4 py-2 bg-pink-500 hover:bg-pink-400 text-white rounded-xl text-sm font-bold transition-colors flex items-center gap-2"
+                className="shrink-0 px-3 sm:px-4 py-2 min-h-[44px] bg-pink-500 active:bg-pink-400 text-white rounded-xl text-sm font-bold transition-colors flex items-center gap-2 whitespace-nowrap"
               >
                 🏷️ Stickers
               </button>
@@ -676,7 +702,7 @@ export function RoomView(props: RoomViewProps) {
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 10 }}
-                    className="absolute top-full right-0 md:left-0 mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-xl p-2 w-40 z-50 flex flex-col gap-2"
+                    className="absolute top-full right-0 md:left-0 mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-xl p-2 w-[min(92vw,10rem)] max-h-[min(50vh,280px)] overflow-y-auto z-50 flex flex-col gap-2"
                   >
                     <button onClick={() => { sendReaction('💀', 'sticker', 'BRUH'); setActiveDropdown(null); }} className="w-full py-2 bg-slate-700 hover:bg-indigo-500 text-white rounded-lg transition-colors text-xs font-black tracking-widest">BRUH</button>
                     <button onClick={() => { sendReaction('🤨', 'sticker', 'SUS'); setActiveDropdown(null); }} className="w-full py-2 bg-slate-700 hover:bg-red-500 text-white rounded-lg transition-colors text-xs font-black tracking-widest">SUS</button>
@@ -691,8 +717,9 @@ export function RoomView(props: RoomViewProps) {
             {/* Record Custom Sound Dropdown */}
             <div className="relative dropdown-container">
               <button 
+                type="button"
                 onClick={() => toggleDropdown('record')}
-                className={`px-4 py-2 ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-red-600 hover:bg-red-500'} text-white rounded-xl text-sm font-bold transition-colors flex items-center gap-2`}
+                className={`shrink-0 px-3 sm:px-4 py-2 min-h-[44px] whitespace-nowrap ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-red-600 active:bg-red-500'} text-white rounded-xl text-sm font-bold transition-colors flex items-center gap-2`}
               >
                 🎤 Record
               </button>
@@ -702,7 +729,7 @@ export function RoomView(props: RoomViewProps) {
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 10 }}
-                    className="absolute top-full right-0 mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-xl p-3 w-56 z-50 flex flex-col gap-2"
+                    className="absolute top-full right-0 mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-xl p-3 w-[min(92vw,14rem)] max-h-[min(50vh,280px)] overflow-y-auto z-50 flex flex-col gap-2"
                   >
                     {isRecording ? (
                       <button 
@@ -800,9 +827,11 @@ export function RoomView(props: RoomViewProps) {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 10 }}
-                className="absolute bottom-20 left-4 z-50"
+                className="absolute bottom-full left-0 right-0 mb-2 z-50 flex justify-center md:bottom-20 md:left-4 md:right-auto md:mb-0 md:block md:w-auto"
               >
-                <EmojiPicker onEmojiClick={onEmojiClick} theme={Theme.DARK} />
+                <div className="max-h-[40vh] overflow-y-auto rounded-xl shadow-2xl">
+                  <EmojiPicker onEmojiClick={onEmojiClick} theme={Theme.DARK} />
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
@@ -825,6 +854,33 @@ export function RoomView(props: RoomViewProps) {
           </button>
         </form>
       </motion.div>
+      </div>
+
+      <nav
+        className="md:hidden flex shrink-0 border-t border-slate-700/80 bg-slate-950/95 backdrop-blur-md z-[70] pb-[env(safe-area-inset-bottom)] shadow-[0_-4px_24px_rgba(0,0,0,0.35)]"
+        aria-label="Room sections"
+      >
+        <button
+          type="button"
+          onClick={() => setMobileTab('room')}
+          className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 min-h-[52px] text-xs font-bold transition-colors ${
+            mobileTab === 'room' ? 'text-emerald-400' : 'text-slate-500 active:text-slate-300'
+          }`}
+        >
+          <Users className="w-6 h-6" aria-hidden />
+          Room
+        </button>
+        <button
+          type="button"
+          onClick={() => setMobileTab('chat')}
+          className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 min-h-[52px] text-xs font-bold transition-colors ${
+            mobileTab === 'chat' ? 'text-indigo-400' : 'text-slate-500 active:text-slate-300'
+          }`}
+        >
+          <MessageSquare className="w-6 h-6" aria-hidden />
+          Chat
+        </button>
+      </nav>
     </div>
   );
 }

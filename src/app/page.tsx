@@ -93,7 +93,7 @@ export default function Home() {
   return (
     <div className="relative">
       {error && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-red-500 text-white px-6 py-3 rounded-xl shadow-lg z-50 font-bold flex items-center gap-2">
+        <div className="absolute top-[max(1rem,env(safe-area-inset-top))] left-1/2 -translate-x-1/2 max-w-[calc(100vw-2rem)] bg-red-500 text-white px-4 sm:px-6 py-3 rounded-xl shadow-lg z-50 font-bold flex flex-wrap items-center justify-center gap-2 text-sm sm:text-base">
           <span>⚠️</span> {error}
           <button onClick={() => setError(null)} className="ml-4 text-red-200 hover:text-white">✕</button>
         </div>
