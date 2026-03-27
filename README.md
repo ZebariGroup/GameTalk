@@ -15,6 +15,9 @@ Minevine is a fun, safe, and easy-to-use audio chat app designed specifically fo
 - Node.js 18+
 - Supabase project
 
+### Database & security
+Room rows and membership are accessed through **server API routes** using `SUPABASE_SERVICE_ROLE_KEY`. Apply all migrations under `supabase/migrations/` (including RLS hardening and `room_members`) so anonymous clients cannot read or insert `rooms` directly.
+
 ### Environment Variables
 Copy `.env.example` to `.env.local` and fill in your Supabase credentials:
 ```bash
@@ -42,6 +45,7 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 - `npm run start`: Starts the production server.
 - `npm run lint`: Runs ESLint.
 - `npm run typecheck`: Runs TypeScript compiler check.
+- `npm run test`: Runs unit tests (Vitest).
 
 ## Deployment
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new).

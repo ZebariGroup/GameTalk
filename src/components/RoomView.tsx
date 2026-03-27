@@ -8,14 +8,16 @@ import { AudioPlayer } from '@/components/AudioPlayer';
 import { VoiceEffect } from '@/lib/audioEffects';
 import { UserRole, ChatMessage, Reaction } from '@/hooks/useAudioChat';
 
+type AvatarVariantName = 'beam' | 'marble' | 'pixel' | 'sunset' | 'ring' | 'bauhaus';
+
 interface RoomViewProps {
   roomCode: string;
   username: string;
   role: UserRole;
-  avatarVariant: any;
+  avatarVariant: AvatarVariantName;
   avatarColors: string[];
   peers: { [id: string]: MediaStream };
-  peerNames: { [id: string]: { name: string, role: UserRole, avatarVariant?: any, avatarColors?: string[] } };
+  peerNames: { [id: string]: { name: string, role: UserRole, avatarVariant?: AvatarVariantName, avatarColors?: string[] } };
   kidCount: number;
   peerVolumes: { [id: string]: number };
   setPeerVolume: (peerId: string, volume: number) => void;
@@ -132,6 +134,7 @@ export function RoomView(props: RoomViewProps) {
     }
   };
 
+  /* eslint-disable react-hooks/set-state-in-effect -- easter-egg reactions tied to latest chat line */
   useEffect(() => {
     const chatScrollEl = chatScrollRef.current;
     if (chatScrollEl) {
@@ -162,6 +165,7 @@ export function RoomView(props: RoomViewProps) {
       }
     }
   }, [chatMessages, sendReaction]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     if (isConnected && role === 'kid') {

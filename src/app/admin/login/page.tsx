@@ -2,11 +2,12 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
+import { getSafeAdminRedirectPath } from '@/lib/adminRedirect';
 
 function AdminLoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const nextPath = searchParams.get('next') || '/admin';
+  const nextPath = getSafeAdminRedirectPath(searchParams.get('next'));
 
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);

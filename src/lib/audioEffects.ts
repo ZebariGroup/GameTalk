@@ -15,7 +15,7 @@ export function applyVoiceEffect(stream: MediaStream, effect: VoiceEffect): { st
   const sourceNode = ctx.createMediaStreamSource(stream);
   const destination = ctx.createMediaStreamDestination();
   
-  let cleanupFns: (() => void)[] = [];
+  const cleanupFns: (() => void)[] = [];
   
   const cleanup = () => {
     sourceNode.disconnect();

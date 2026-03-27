@@ -1,25 +1,42 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { applyVoiceEffect, playSound, VoiceEffect } from '@/lib/audioEffects';
 import { filterProfanity } from '@/lib/moderation';
 import { normalizeRoomCode } from '@/lib/roomCode';
+import {
+  isChatMessagePayloadReasonable,
+  isMinigamePayloadReasonable,
+  isReactionPayloadReasonable,
+  isSignalPayloadReasonable,
+  isSoundPayloadReasonable,
+  MAX_CUSTOM_AUDIO_BASE64_CHARS,
+  truncateChatText,
+} from '@/lib/realtimeGuards';
 
-// STUN servers to help peers connect over the internet
-const ICE_SERVERS = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    // In production, you should use a paid TURN service (e.g. Twilio, Metered)
-    { 
-      urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
+function useRtcConfiguration(): RTCConfiguration {
+  return useMemo(() => {
+    const iceServers: RTCIceServer[] = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+    ];
+    const turnUrl = process.env.NEXT_PUBLIC_TURN_URL;
+    const turnUser = process.env.NEXT_PUBLIC_TURN_USERNAME;
+    const turnCred = process.env.NEXT_PUBLIC_TURN_CREDENTIAL;
+    if (turnUrl && turnUser && turnCred) {
+      iceServers.push({ urls: turnUrl, username: turnUser, credential: turnCred });
+    } else {
+      iceServers.push({
+        urls: 'turn:openrelay.metered.ca:80',
+        username: 'openrelayproject',
+        credential: 'openrelayproject',
+      });
     }
-  ],
-};
+    return { iceServers };
+  }, []);
+}
 
 export type UserRole = 'kid' | 'observer';
 
@@ -41,6 +58,7 @@ export interface Reaction {
 }
 
 export function useAudioChat(roomCode: string | null, username: string, role: UserRole = 'kid', avatarVariant: 'beam' | 'marble' | 'pixel' | 'sunset' | 'ring' | 'bauhaus' = 'beam', avatarColors: string[] = ['#34d399', '#38bdf8', '#818cf8', '#c084fc', '#fbbf24']) {
+  const rtcConfig = useRtcConfiguration();
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [peers, setPeers] = useState<{ [id: string]: MediaStream }>({});
   const [peerNames, setPeerNames] = useState<{ [id: string]: { name: string, role: UserRole, avatarVariant?: 'beam' | 'marble' | 'pixel' | 'sunset' | 'ring' | 'bauhaus', avatarColors?: string[] } }>({});
@@ -63,6 +81,13 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
 
   const [myId] = useState(() => Math.random().toString(36).substring(2, 15));
   const myIdRef = useRef(myId);
+  const isConnectedRef = useRef(false);
+  const presencePayloadRef = useRef({
+    role,
+    peerName: username || 'Kid',
+    avatarVariant,
+    avatarColors,
+  });
   const channelRef = useRef<RealtimeChannel | null>(null);
   const peerConnections = useRef<{ [id: string]: RTCPeerConnection }>({});
   const pendingIceCandidates = useRef<{ [id: string]: RTCIceCandidateInit[] }>({});
@@ -71,33 +96,61 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
   const timeoutCount = useRef(0);
 
   useEffect(() => {
+    presencePayloadRef.current = {
+      role,
+      peerName: username || 'Kid',
+      avatarVariant,
+      avatarColors,
+    };
+  }, [role, username, avatarVariant, avatarColors]);
+
+  useEffect(() => {
+    isConnectedRef.current = isConnected;
+  }, [isConnected]);
+
+  useEffect(() => {
     setIsOnline(typeof window !== 'undefined' ? navigator.onLine : true);
 
     const handleOnline = () => {
       setIsOnline(true);
       setIsReconnecting(true);
-      
-      // Re-announce presence to trigger WebRTC reconnections
-      if (channelRef.current && isConnected) {
-        channelRef.current.track({ role, peerName: username || 'Kid' });
-        announcePresence(channelRef.current);
+
+      if (channelRef.current && isConnectedRef.current) {
+        const p = presencePayloadRef.current;
+        void channelRef.current.track({
+          role: p.role,
+          peerName: p.peerName,
+          avatarVariant: p.avatarVariant,
+          avatarColors: p.avatarColors,
+        });
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'peer-joined',
+          payload: {
+            peerId: myIdRef.current,
+            peerName: p.peerName,
+            peerRole: p.role,
+            avatarVariant: p.avatarVariant,
+            avatarColors: p.avatarColors,
+          },
+        });
       }
-      
+
       setTimeout(() => setIsReconnecting(false), 3000);
     };
-    
+
     const handleOffline = () => {
       setIsOnline(false);
     };
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-    
+
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, [avatarColors, avatarVariant, isConnected, role, username]);
+  }, []);
 
   const removePeer = (peerId: string) => {
     if (disconnectTimers.current[peerId]) {
@@ -116,7 +169,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
   };
 
   const createPeerConnection = (peerId: string, stream: MediaStream | null, channel: RealtimeChannel) => {
-    const pc = new RTCPeerConnection(ICE_SERVERS);
+    const pc = new RTCPeerConnection(rtcConfig);
     peerConnections.current[peerId] = pc;
 
     if (stream) {
@@ -164,7 +217,15 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
           channel.send({
             type: 'broadcast',
             event: 'signal',
-            payload: { target: peerId, sender: myIdRef.current, senderName: username, senderRole: role, signal: { type: 'offer', sdp: offer } }
+            payload: {
+              target: peerId,
+              sender: myIdRef.current,
+              senderName: username,
+              senderRole: role,
+              avatarVariant,
+              avatarColors,
+              signal: { type: 'offer', sdp: offer },
+            },
           });
         } catch (err) {
           console.error('ICE restart failed', err);
@@ -320,40 +381,50 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
   useEffect(() => {
     if (!roomCode) return;
 
+    const memberIdForCleanup = myIdRef.current;
+
     let mounted = true;
     let cleaningUp = false;
     let effectChannel: RealtimeChannel | null = null;
+    let roomCodeForLeave: string | null = null;
 
     const initChat = async () => {
-      try {
-        const normalizedInputCode = normalizeRoomCode(roomCode);
-        if (!normalizedInputCode) {
-          setError('Invalid room code.');
+    try {
+      const normalizedInputCode = normalizeRoomCode(roomCode);
+      if (!normalizedInputCode) {
+        setError('Invalid room code.');
+        return;
+      }
+
+        const joinRes = await fetch('/api/rooms/join', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            code: roomCode,
+            memberId: myIdRef.current,
+            role,
+          }),
+        });
+
+        if (!joinRes.ok) {
+          if (joinRes.status === 403) {
+            setError('This room is full. Try again later or create a new room.');
+          } else if (joinRes.status === 404) {
+            setError('Invalid room code.');
+          } else if (joinRes.status === 410) {
+            setError('This room has expired. Please create a new one.');
+          } else {
+            setError('Could not join this room.');
+          }
           return;
         }
 
-        // 1. Check room max members and expiration in DB
-        const { data: roomData, error: roomError } = await supabase
-          .from('rooms')
-          .select('code, max_members, expires_at')
-          .ilike('code', normalizedInputCode)
-          .maybeSingle();
+        const joinData = (await joinRes.json()) as {
+          code: string;
+        };
+        roomCodeForLeave = joinData.code;
 
-        if (roomError || !roomData) {
-          setError('Invalid room code.');
-          return;
-        }
-
-        const canonicalRoomCode = roomData.code;
-
-        if (roomData.expires_at && new Date(roomData.expires_at) < new Date()) {
-          setError('This room has expired. Please create a new one.');
-          return;
-        }
-
-        const maxMembers = roomData.max_members;
-
-        // 2. Get local audio (ONLY if not observer)
+        // Get local audio (ONLY if not observer)
         let stream: MediaStream | null = null;
         if (role === 'kid') {
           stream = await navigator.mediaDevices.getUserMedia({ 
@@ -374,8 +445,9 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
           setLocalStream(stream); // keep original for muting
         }
 
-        // 3. Join Supabase Channel for signaling
-        const channel = supabase.channel(`room-${canonicalRoomCode}`, {
+        const channelTopic = `room-${normalizeRoomCode(roomCodeForLeave)}`;
+
+        const channel = supabase.channel(channelTopic, {
           config: {
             presence: {
               key: myIdRef.current,
@@ -423,130 +495,216 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
               }
             }
             setKidCount(nextKidCount);
-            
-            // If we are a kid and we pushed the count over the limit, we must leave
-            if (role === 'kid' && nextKidCount > maxMembers) {
-              setError(`This room is full (Max ${maxMembers} kids).`);
-              channel.unsubscribe();
-              if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-              }
-            }
           })
           .on('broadcast', { event: 'peer-joined' }, async ({ payload }) => {
-            const { peerId, peerName, peerRole, avatarVariant: peerAvatarVariant, avatarColors: peerAvatarColors } = payload;
-            if (peerId === myIdRef.current) return;
+            const p = payload as Record<string, unknown>;
+            const peerId = p.peerId;
+            if (typeof peerId !== 'string' || peerId === myIdRef.current) return;
+            const peerName = typeof p.peerName === 'string' ? p.peerName : 'Kid';
+            const peerRole = p.peerRole === 'observer' ? 'observer' : 'kid';
+            const peerAvatarVariant = p.avatarVariant;
+            const peerAvatarColors = p.avatarColors;
             
-            setPeerNames(prev => ({ ...prev, [peerId]: { name: peerName || 'Kid', role: peerRole || 'kid', avatarVariant: peerAvatarVariant || 'beam', avatarColors: peerAvatarColors } }));
-            // Fallback path in case presence sync is delayed/missed.
+            setPeerNames(prev => ({
+              ...prev,
+              [peerId]: {
+                name: peerName,
+                role: peerRole,
+                avatarVariant:
+                  peerAvatarVariant === 'beam' ||
+                  peerAvatarVariant === 'marble' ||
+                  peerAvatarVariant === 'pixel' ||
+                  peerAvatarVariant === 'sunset' ||
+                  peerAvatarVariant === 'ring' ||
+                  peerAvatarVariant === 'bauhaus'
+                    ? peerAvatarVariant
+                    : 'beam',
+                avatarColors: Array.isArray(peerAvatarColors)
+                  ? peerAvatarColors.filter((c): c is string => typeof c === 'string')
+                  : undefined,
+              },
+            }));
             await startOfferForPeer(peerId, channel);
           })
           .on('broadcast', { event: 'signal' }, async ({ payload }) => {
-            const { target, sender, senderName, senderRole, avatarVariant: senderAvatarVariant, avatarColors: senderAvatarColors, signal } = payload;
-            if (target !== myIdRef.current) return;
+            const raw = payload as Record<string, unknown>;
+            const target = raw.target;
+            const sender = raw.sender;
+            const signal = raw.signal;
+            if (typeof target !== 'string' || target !== myIdRef.current) return;
+            if (typeof sender !== 'string') return;
+            if (!signal || typeof signal !== 'object' || !isSignalPayloadReasonable(signal)) return;
 
-            if (senderName) {
-              setPeerNames(prev => ({ ...prev, [sender]: { name: senderName, role: senderRole || 'kid', avatarVariant: senderAvatarVariant || 'beam', avatarColors: senderAvatarColors } }));
+            const senderName = raw.senderName;
+            const senderRole = raw.senderRole;
+            const senderAvatarVariant = raw.avatarVariant;
+            const senderAvatarColors = raw.avatarColors;
+
+            if (typeof senderName === 'string') {
+              setPeerNames(prev => ({
+                ...prev,
+                [sender]: {
+                  name: senderName,
+                  role: senderRole === 'observer' ? 'observer' : 'kid',
+                  avatarVariant:
+                    senderAvatarVariant === 'beam' ||
+                    senderAvatarVariant === 'marble' ||
+                    senderAvatarVariant === 'pixel' ||
+                    senderAvatarVariant === 'sunset' ||
+                    senderAvatarVariant === 'ring' ||
+                    senderAvatarVariant === 'bauhaus'
+                      ? senderAvatarVariant
+                      : 'beam',
+                  avatarColors: Array.isArray(senderAvatarColors)
+                    ? senderAvatarColors.filter((c): c is string => typeof c === 'string')
+                    : undefined,
+                },
+              }));
             }
 
+            const sig = signal as {
+              type?: string;
+              sdp?: RTCSessionDescriptionInit;
+              candidates?: RTCIceCandidateInit[];
+              candidate?: RTCIceCandidateInit;
+            };
+
             let pc = peerConnections.current[sender];
-            
-            if (signal.type === 'offer') {
+
+            if (sig.type === 'offer') {
+              if (!sig.sdp) return;
               if (!pc) {
                 pc = createPeerConnection(sender, processedStreamRef.current, channel);
               }
-              await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+              await pc.setRemoteDescription(new RTCSessionDescription(sig.sdp));
               await flushPendingIceCandidates(sender, pc);
               const answer = await pc.createAnswer();
               await pc.setLocalDescription(answer);
-              
+
               channel.send({
                 type: 'broadcast',
                 event: 'signal',
-                payload: { target: sender, sender: myIdRef.current, senderName: username, senderRole: role, signal: { type: 'answer', sdp: answer } }
+                payload: {
+                  target: sender,
+                  sender: myIdRef.current,
+                  senderName: username,
+                  senderRole: role,
+                  avatarVariant,
+                  avatarColors,
+                  signal: { type: 'answer', sdp: answer },
+                },
               });
-            } else if (signal.type === 'answer') {
+            } else if (sig.type === 'answer') {
+              if (!sig.sdp) return;
               if (pc) {
-                await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+                await pc.setRemoteDescription(new RTCSessionDescription(sig.sdp));
                 await flushPendingIceCandidates(sender, pc);
               }
-            } else if (signal.candidates) {
+            } else if (sig.candidates) {
               if (pc) {
                 if (pc.remoteDescription) {
-                  for (const c of signal.candidates) {
+                  for (const c of sig.candidates) {
                     await pc.addIceCandidate(new RTCIceCandidate(c));
                   }
                 } else {
                   pendingIceCandidates.current[sender] = [
                     ...(pendingIceCandidates.current[sender] || []),
-                    ...signal.candidates,
+                    ...sig.candidates,
                   ];
                 }
               } else {
                 pendingIceCandidates.current[sender] = [
                   ...(pendingIceCandidates.current[sender] || []),
-                  ...signal.candidates,
+                  ...sig.candidates,
                 ];
               }
-            } else if (signal.candidate) {
+            } else if (sig.candidate) {
               if (pc) {
                 if (pc.remoteDescription) {
-                  await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+                  await pc.addIceCandidate(new RTCIceCandidate(sig.candidate));
                 } else {
                   pendingIceCandidates.current[sender] = [
                     ...(pendingIceCandidates.current[sender] || []),
-                    signal.candidate as RTCIceCandidateInit,
+                    sig.candidate as RTCIceCandidateInit,
                   ];
                 }
               } else {
                 pendingIceCandidates.current[sender] = [
                   ...(pendingIceCandidates.current[sender] || []),
-                  signal.candidate as RTCIceCandidateInit,
+                  sig.candidate as RTCIceCandidateInit,
                 ];
               }
             }
           })
           .on('broadcast', { event: 'chat-message' }, ({ payload }) => {
-            setChatMessages(prev => [...prev, payload]);
+            if (!isChatMessagePayloadReasonable(payload)) return;
+            setChatMessages(prev => [...prev, payload as ChatMessage]);
           })
           .on('broadcast', { event: 'reaction' }, ({ payload }) => {
-            setFloatingReactions(prev => [...prev, { id: Math.random().toString(), emoji: payload.emoji, x: Math.random() * 80 + 10, type: payload.type, text: payload.text, rotate: Math.random() * 40 - 20 }]);
+            if (!isReactionPayloadReasonable(payload)) return;
+            const p = payload as { emoji: string; type?: 'emoji' | 'sticker'; text?: string };
+            setFloatingReactions(prev => [
+              ...prev,
+              {
+                id: Math.random().toString(),
+                emoji: p.emoji,
+                x: Math.random() * 80 + 10,
+                type: p.type,
+                text: p.text,
+                rotate: Math.random() * 40 - 20,
+              },
+            ]);
           })
           .on('broadcast', { event: 'sound' }, ({ payload }) => {
-            if (payload.soundId === 'custom' && payload.audioData) {
-              // Limit custom audio data size (approx 500KB)
-              if (typeof payload.audioData === 'string' && payload.audioData.length < 500000) {
-                const audio = new Audio(payload.audioData);
-                audio.play().catch(e => console.error("Error playing custom sound:", e));
+            if (!isSoundPayloadReasonable(payload)) return;
+            const p = payload as { soundId: string; audioData?: string };
+            if (p.soundId === 'custom' && p.audioData) {
+              if (typeof p.audioData === 'string' && p.audioData.length <= MAX_CUSTOM_AUDIO_BASE64_CHARS) {
+                const audio = new Audio(p.audioData);
+                audio.play().catch((e) => console.error('Error playing custom sound:', e));
               }
             } else {
-              playSound(payload.soundId);
+              playSound(p.soundId);
             }
           })
           .on('broadcast', { event: 'minigame' }, ({ payload }) => {
-            if (payload.action === 'start') {
-              setActiveMinigame({ type: payload.gameType, starter: payload.starter, word: payload.word, guesses: [] });
-            } else if (payload.action === 'guess') {
-              setActiveMinigame(prev => {
+            if (!isMinigamePayloadReasonable(payload)) return;
+            const p = payload as {
+              action: string;
+              gameType: string;
+              starter: string;
+              word?: string;
+              letter?: string;
+            };
+            if (p.action === 'start') {
+              setActiveMinigame({ type: p.gameType, starter: p.starter, word: p.word, guesses: [] });
+            } else if (p.action === 'guess' && typeof p.letter === 'string') {
+              const letter = p.letter;
+              setActiveMinigame((prev) => {
                 if (!prev || prev.type !== 'word_guess') return prev;
-                return { ...prev, guesses: [...(prev.guesses || []), payload.letter] };
+                return { ...prev, guesses: [...(prev.guesses || []), letter] };
               });
-            } else if (payload.action === 'end') {
+            } else if (p.action === 'end') {
               setActiveMinigame(null);
             }
           })
           .on('broadcast', { event: 'peer-left' }, ({ payload }) => {
-            const { peerId } = payload;
-            removePeer(peerId);
+            const p = payload as Record<string, unknown>;
+            if (typeof p.peerId !== 'string') return;
+            removePeer(p.peerId);
           })
           .subscribe(async (status) => {
             if (status === 'SUBSCRIBED') {
               setIsConnected(true);
               setIsReconnecting(false);
               
-              // Track presence for counting max members
               try {
-                await channel.track({ role, peerName: username || 'Kid' });
+                await channel.track({
+                  role,
+                  peerName: username || 'Kid',
+                  avatarVariant,
+                  avatarColors,
+                });
               } catch (presenceErr) {
                 console.error('Presence track failed:', presenceErr);
               }
@@ -571,12 +729,19 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
     return () => {
       mounted = false;
       cleaningUp = true;
+      if (roomCodeForLeave) {
+        void fetch('/api/rooms/leave', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: roomCodeForLeave, memberId: memberIdForCleanup }),
+        });
+      }
       const activeChannel = effectChannel;
       if (activeChannel) {
         activeChannel.send({
           type: 'broadcast',
           event: 'peer-left',
-          payload: { peerId: myIdRef.current }
+          payload: { peerId: memberIdForCleanup },
         });
         activeChannel.untrack();
         supabase.removeChannel(activeChannel);
@@ -654,8 +819,8 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
       return;
     }
 
-    const { cleanText } = filterProfanity(text);
-    
+    const { cleanText } = filterProfanity(truncateChatText(text));
+
     const message: ChatMessage = {
       id: Math.random().toString(36).substring(2, 9),
       senderId: myIdRef.current,
@@ -693,8 +858,8 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
     if (!channelRef.current || !isConnected) return;
     if (timeoutUntil && Date.now() < timeoutUntil) return;
 
-    if (audioData && audioData.length > 500000) {
-      console.warn("Custom audio too large");
+    if (audioData && audioData.length > MAX_CUSTOM_AUDIO_BASE64_CHARS) {
+      console.warn('Custom audio too large');
       return;
     }
 
@@ -707,7 +872,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
     channelRef.current.send({ type: 'broadcast', event: 'sound', payload: { soundId, audioData } });
     
     if (soundId === 'custom' && audioData) {
-      if (typeof audioData === 'string' && audioData.length < 500000) {
+      if (typeof audioData === 'string' && audioData.length <= MAX_CUSTOM_AUDIO_BASE64_CHARS) {
         const audio = new Audio(audioData);
         audio.play().catch(e => console.error("Error playing custom sound:", e));
       }
@@ -817,7 +982,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
             if (packetLoss > 0.05) qualities[peerId] = 'poor';
             else if (packetLoss > 0.01) qualities[peerId] = 'fair';
             else qualities[peerId] = 'good';
-          } catch (e) {
+          } catch {
             qualities[peerId] = 'good';
           }
         } else {

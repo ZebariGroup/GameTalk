@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Dices, Sparkles, ShieldCheck } from 'lucide-react';
 import Avatar from 'boring-avatars';

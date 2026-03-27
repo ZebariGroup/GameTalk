@@ -1,10 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { generateRoomCode } from '@/lib/generateCode';
 import { generateName } from '@/lib/generateName';
 import { useAudioChat, UserRole } from '@/hooks/useAudioChat';
-import { supabase } from '@/lib/supabase';
 import { Lobby, AVATAR_VARIANTS, COLOR_PALETTES } from '@/components/Lobby';
 import { RoomView } from '@/components/RoomView';
 
@@ -28,47 +26,49 @@ export default function Home() {
   const handleCreateRoom = async (maxMembers: number) => {
     setIsCreating(true);
     setError(null);
-    
-    // Calculate expiration time (24 hours from now)
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 24);
 
-    let code: string | null = null;
-    let dbError: { code?: string } | null = null;
-
-    // Two-word codes have fewer combinations than the previous format.
-    // Retry on primary-key collisions to keep room creation reliable.
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const candidate = generateRoomCode();
-      const { error } = await supabase.from('rooms').insert([
-        { code: candidate, max_members: maxMembers, expires_at: expiresAt.toISOString() }
-      ]);
-
-      if (!error) {
-        code = candidate;
-        dbError = null;
-        break;
+    try {
+      const res = await fetch('/api/rooms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ maxMembers }),
+      });
+      if (!res.ok) {
+        setError('Failed to create room. Please try again.');
+        return;
       }
-
-      dbError = error;
-      if (error.code !== '23505') {
-        break;
-      }
+      const data = (await res.json()) as { code: string };
+      setRoomCode(data.code);
+    } catch (e) {
+      console.error(e);
+      setError('Failed to create room. Please try again.');
+    } finally {
+      setIsCreating(false);
     }
-
-    setIsCreating(false);
-
-    if (dbError || !code) {
-      setError("Failed to create room. Please try again.");
-      console.error(dbError);
-      return;
-    }
-
-    setRoomCode(code);
   };
 
-  const handleJoinRoom = (code: string) => {
-    setRoomCode(code);
+  const handleJoinRoom = async (code: string) => {
+    setError(null);
+    try {
+      const res = await fetch(`/api/rooms/lookup?code=${encodeURIComponent(code)}`);
+      if (res.status === 404) {
+        setError('Invalid room code.');
+        return;
+      }
+      if (res.status === 410) {
+        setError('This room has expired. Please create a new one.');
+        return;
+      }
+      if (!res.ok) {
+        setError('Could not verify room. Please try again.');
+        return;
+      }
+      const data = (await res.json()) as { code: string };
+      setRoomCode(data.code);
+    } catch (e) {
+      console.error(e);
+      setError('Could not verify room. Please try again.');
+    }
   };
 
   const handleLeaveRoom = () => {
