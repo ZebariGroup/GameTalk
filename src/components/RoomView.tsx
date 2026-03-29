@@ -238,7 +238,7 @@ export const RoomView = forwardRef<RoomViewHandle, RoomViewProps>(function RoomV
 
   return (
     <div
-      className={`h-[100dvh] bg-slate-900 text-white flex flex-col relative overflow-hidden ${eggClass}`}
+      className={`h-[100dvh] w-full bg-slate-900 text-white flex flex-col relative overflow-hidden ${eggClass}`}
     >
       
       {/* Network Status Banners */}
@@ -253,7 +253,7 @@ export const RoomView = forwardRef<RoomViewHandle, RoomViewProps>(function RoomV
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1 flex-col w-full max-w-5xl lg:max-w-6xl mx-auto px-3 sm:px-4 md:px-6">
+      <div className="flex min-h-0 flex-1 flex-col w-full min-w-0 max-w-5xl lg:max-w-6xl mx-auto px-3 sm:px-4 md:px-6 box-border">
       <header className="relative z-[60] flex shrink-0 items-center justify-between gap-3 border-b border-slate-800/80 bg-slate-950/90 py-2.5 pt-[max(0.35rem,env(safe-area-inset-top))] backdrop-blur-md md:mt-2 md:rounded-t-2xl md:border md:border-b-0 md:border-slate-800">
         <div className="min-w-0 flex-1">
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Room</p>
@@ -272,13 +272,13 @@ export const RoomView = forwardRef<RoomViewHandle, RoomViewProps>(function RoomV
         </button>
       </header>
 
-      <div className="flex flex-1 flex-col min-h-0 md:flex-row md:items-stretch md:justify-center pt-2 md:pt-4 pb-2 md:pb-4 gap-3 md:gap-6">
+      <div className="grid w-full flex-1 min-h-0 grid-cols-1 md:grid-cols-2 md:max-w-[56rem] md:mx-auto md:justify-items-center md:items-stretch pt-2 md:pt-4 pb-2 md:pb-4 gap-3 md:gap-6">
       {/* Left Column: Audio & Controls */}
       <motion.div 
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
-        className={`bg-slate-800 p-3 sm:p-4 md:p-8 rounded-2xl md:rounded-3xl shadow-2xl w-full max-w-md md:flex-none md:self-stretch text-center border border-slate-700 flex flex-col min-h-0 overflow-y-auto md:overflow-visible md:h-[min(85vh,920px)] ${
-          mobileTab === 'room' ? 'flex flex-1' : 'hidden md:flex'
+        className={`bg-slate-800 p-3 sm:p-4 md:p-8 rounded-2xl md:rounded-3xl shadow-2xl w-full max-w-md justify-self-center text-center border border-slate-700 flex flex-col min-h-0 overflow-y-auto md:overflow-visible md:h-[min(85vh,920px)] md:w-full ${
+          mobileTab === 'room' ? 'flex flex-1 min-h-0' : 'hidden md:flex'
         }`}
       >
         <h2 className="text-xl sm:text-2xl font-bold mb-2 text-slate-300">Room Code</h2>
@@ -465,8 +465,8 @@ export const RoomView = forwardRef<RoomViewHandle, RoomViewProps>(function RoomV
       <motion.div 
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
-        className={`bg-slate-800 rounded-2xl md:rounded-3xl shadow-2xl w-full max-w-md md:flex-none md:self-stretch border border-slate-700 flex flex-col min-h-0 overflow-hidden md:h-[min(85vh,920px)] ${
-          mobileTab === 'chat' ? 'flex flex-1' : 'hidden md:flex'
+        className={`bg-slate-800 rounded-2xl md:rounded-3xl shadow-2xl w-full max-w-md justify-self-center border border-slate-700 flex flex-col min-h-0 overflow-hidden md:h-[min(85vh,920px)] md:w-full ${
+          mobileTab === 'chat' ? 'flex flex-1 min-h-0' : 'hidden md:flex'
         }`}
       >
         {/* Timeout Banner */}
