@@ -562,7 +562,7 @@ export function RoomView(props: RoomViewProps) {
         {/* Soundboard & Minigames — wide screens: top strip; narrow: dock above input + bottom sheet */}
         {role === 'kid' && (
           <>
-          <div className="hidden lg:flex p-2 sm:p-4 bg-slate-900 border-b border-slate-700 flex-row flex-nowrap overflow-x-auto gap-2 shrink-0 z-10 touch-pan-x [scrollbar-width:thin]">
+          <div className="hidden lg:flex p-2 sm:p-4 bg-slate-900 border-b border-slate-700 flex flex-wrap justify-center gap-2 shrink-0 z-10">
             
             {/* Minigames Dropdown */}
             <div className="relative dropdown-container">
