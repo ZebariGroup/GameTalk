@@ -1,6 +1,23 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mic, MicOff, PhoneOff, Users, Copy, Check, Send, Smile, Eye, Wifi, MessageSquare } from 'lucide-react';
+import {
+  Mic,
+  MicOff,
+  PhoneOff,
+  Users,
+  Copy,
+  Check,
+  Send,
+  Smile,
+  Eye,
+  Wifi,
+  MessageSquare,
+  Gamepad2,
+  Music,
+  Zap,
+  Laugh,
+  Tag,
+} from 'lucide-react';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
 import confetti from 'canvas-confetti';
 import Avatar from 'boring-avatars';
@@ -75,9 +92,9 @@ export function RoomView(props: RoomViewProps) {
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (!(e.target as Element).closest('.dropdown-container')) {
-        setActiveDropdown(null);
-      }
+      const el = e.target as Element;
+      if (el.closest('.dropdown-container') || el.closest('.chat-effects-ui')) return;
+      setActiveDropdown(null);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -86,6 +103,10 @@ export function RoomView(props: RoomViewProps) {
   const toggleDropdown = (name: string) => {
     setActiveDropdown(prev => prev === name ? null : name);
   };
+
+  useEffect(() => {
+    if (mobileTab !== 'chat') setActiveDropdown(null);
+  }, [mobileTab]);
 
   const isOnlyEmojis = (str: string) => {
     const emojiRegex = /^[\p{Emoji}\s]+$/u;
@@ -538,9 +559,10 @@ export function RoomView(props: RoomViewProps) {
           )}
         </AnimatePresence>
 
-        {/* Soundboard & Minigames (Only for kids) */}
+        {/* Soundboard & Minigames — wide screens: top strip; narrow: dock above input + bottom sheet */}
         {role === 'kid' && (
-          <div className="p-2 sm:p-4 bg-slate-900 border-b border-slate-700 flex flex-nowrap overflow-x-auto gap-2 shrink-0 z-10 touch-pan-x [scrollbar-width:thin]">
+          <>
+          <div className="hidden lg:flex p-2 sm:p-4 bg-slate-900 border-b border-slate-700 flex-row flex-nowrap overflow-x-auto gap-2 shrink-0 z-10 touch-pan-x [scrollbar-width:thin]">
             
             {/* Minigames Dropdown */}
             <div className="relative dropdown-container">
@@ -787,6 +809,255 @@ export function RoomView(props: RoomViewProps) {
             </div>
 
           </div>
+
+          <AnimatePresence>
+            {activeDropdown && (
+              <>
+                <motion.div
+                  key="fx-backdrop"
+                  role="presentation"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="fixed inset-0 z-[85] bg-slate-950/70 backdrop-blur-[2px] lg:hidden"
+                  onClick={() => setActiveDropdown(null)}
+                />
+                <motion.div
+                  key={activeDropdown}
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Chat effects"
+                  initial={{ opacity: 0, y: 32, scale: 0.92 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 24, scale: 0.96 }}
+                  transition={{ type: 'spring', damping: 26, stiffness: 380 }}
+                  className="chat-effects-ui fixed left-3 right-3 z-[90] max-h-[min(52vh,400px)] overflow-y-auto rounded-2xl border border-slate-600 bg-slate-800/98 p-3 shadow-2xl shadow-black/40 lg:hidden"
+                  style={{ bottom: 'calc(5.75rem + env(safe-area-inset-bottom, 0px))' }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {activeDropdown === 'minigames' && (
+                    <div className="space-y-2">
+                      <p className="text-center text-xs font-bold uppercase tracking-wide text-indigo-300">Minigames</p>
+                      {!showWordInput && !activeMinigame ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowWordInput(true)}
+                          className="w-full rounded-xl bg-indigo-600 px-3 py-3 text-sm font-bold text-white transition-colors active:bg-indigo-500"
+                        >
+                          🎮 Start Word Guess
+                        </button>
+                      ) : showWordInput ? (
+                        <div className="flex flex-col gap-2">
+                          <input
+                            type="text"
+                            value={secretWord}
+                            onChange={(e) => setSecretWord(e.target.value)}
+                            placeholder="Secret word..."
+                            className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (secretWord.trim()) {
+                                  triggerMinigame('word_guess', 'start', { word: secretWord.trim().toUpperCase() });
+                                  setShowWordInput(false);
+                                  setSecretWord('');
+                                  setActiveDropdown(null);
+                                }
+                              }}
+                              className="flex-1 rounded-lg bg-emerald-500 px-3 py-2 text-sm font-bold text-white active:bg-emerald-400"
+                            >
+                              Start
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setShowWordInput(false)}
+                              className="rounded-lg bg-slate-700 px-3 py-2 text-sm font-bold text-white active:bg-slate-600"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="py-2 text-center text-sm text-slate-300">Game in progress...</div>
+                      )}
+                    </div>
+                  )}
+                  {activeDropdown === 'sounds' && (
+                    <div className="space-y-1">
+                      <p className="mb-2 text-center text-xs font-bold uppercase tracking-wide text-purple-300">Fun sounds</p>
+                      {(
+                        [
+                          ['laser', '🔫 Laser'],
+                          ['magic', '✨ Magic'],
+                          ['fart', '💨 Fart'],
+                          ['applause', '👏 Applause'],
+                          ['trombone', '🎺 Sad Trombone'],
+                        ] as const
+                      ).map(([id, label], i) => (
+                        <motion.button
+                          key={id}
+                          type="button"
+                          initial={{ opacity: 0, x: -12 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.04 * i }}
+                          onClick={() => {
+                            triggerSound(id);
+                            setActiveDropdown(null);
+                          }}
+                          className="flex w-full items-center gap-2 rounded-xl bg-slate-700/80 px-3 py-2.5 text-left text-sm font-semibold text-white active:scale-[0.98] active:bg-purple-600/40"
+                        >
+                          {label}
+                        </motion.button>
+                      ))}
+                    </div>
+                  )}
+                  {activeDropdown === 'game_sounds' && (
+                    <div className="space-y-1">
+                      <p className="mb-2 text-center text-xs font-bold uppercase tracking-wide text-emerald-300">Game FX</p>
+                      {(
+                        [
+                          ['mc_break', '⛏️ Block Break'],
+                          ['fn_shield', '🛡️ Shield Pop'],
+                          ['mario_coin', '🪙 Coin'],
+                          ['roblox_oof', '🤕 Oof'],
+                          ['jump', '🦘 Jump'],
+                        ] as const
+                      ).map(([id, label], i) => (
+                        <motion.button
+                          key={id}
+                          type="button"
+                          initial={{ opacity: 0, x: -12 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.04 * i }}
+                          onClick={() => {
+                            triggerSound(id);
+                            setActiveDropdown(null);
+                          }}
+                          className="flex w-full items-center gap-2 rounded-xl bg-slate-700/80 px-3 py-2.5 text-left text-sm font-semibold text-white active:scale-[0.98] active:bg-emerald-600/40"
+                        >
+                          {label}
+                        </motion.button>
+                      ))}
+                    </div>
+                  )}
+                  {activeDropdown === 'reactions' && (
+                    <div>
+                      <p className="mb-2 text-center text-xs font-bold uppercase tracking-wide text-amber-300">Quick react</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {['😂', '❤️', '😮', '🔥', '💀', '💯'].map((emoji, i) => (
+                          <motion.button
+                            key={emoji}
+                            type="button"
+                            initial={{ opacity: 0, scale: 0.5 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ delay: 0.05 * i, type: 'spring', stiffness: 500, damping: 22 }}
+                            onClick={() => {
+                              sendReaction(emoji);
+                              setActiveDropdown(null);
+                            }}
+                            className="flex h-14 items-center justify-center rounded-xl bg-slate-700 text-3xl active:scale-95 active:bg-amber-600/30"
+                          >
+                            {emoji}
+                          </motion.button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {activeDropdown === 'stickers' && (
+                    <div className="space-y-2">
+                      <p className="text-center text-xs font-bold uppercase tracking-wide text-pink-300">Stickers</p>
+                      {(
+                        [
+                          ['💀', 'BRUH', 'active:bg-indigo-600/50'],
+                          ['🤨', 'SUS', 'active:bg-red-600/50'],
+                          ['🏆', 'EPIC', 'active:bg-emerald-600/50'],
+                          ['🤦‍♂️', 'NOOB', 'active:bg-amber-600/50'],
+                          ['🚽', 'SKIBIDI', 'active:bg-purple-600/50'],
+                        ] as const
+                      ).map(([emoji, text, activeClass], i) => (
+                        <motion.button
+                          key={text}
+                          type="button"
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.06 * i }}
+                          onClick={() => {
+                            sendReaction(emoji, 'sticker', text);
+                            setActiveDropdown(null);
+                          }}
+                          className={`w-full rounded-xl bg-slate-700 py-3 text-xs font-black tracking-widest text-white transition-colors active:bg-slate-600 ${activeClass}`}
+                        >
+                          {text}
+                        </motion.button>
+                      ))}
+                    </div>
+                  )}
+                  {activeDropdown === 'record' && (
+                    <div className="space-y-2">
+                      <p className="text-center text-xs font-bold uppercase tracking-wide text-red-300">Record a sound</p>
+                      {isRecording ? (
+                        <button
+                          type="button"
+                          onClick={stopRecording}
+                          className="flex w-full items-center justify-center gap-2 rounded-xl bg-red-500 py-3 text-sm font-bold text-white active:bg-red-600"
+                        >
+                          ⏹️ Stop Recording
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={startRecording}
+                          className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-700 py-3 text-sm font-bold text-white active:bg-red-500/80"
+                        >
+                          ⏺️ Start Recording (3s)
+                        </button>
+                      )}
+                      {customSound && !isRecording && (
+                        <>
+                          <div className="my-1 h-px bg-slate-700" />
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (customAudioRef.current) {
+                                  customAudioRef.current.src = customSound;
+                                  customAudioRef.current.play();
+                                }
+                              }}
+                              className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-slate-700 py-2 text-sm font-bold text-white active:bg-slate-600"
+                            >
+                              ▶️ Play
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setCustomSound(null)}
+                              className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-slate-700 py-2 text-sm font-bold text-white active:bg-red-500/50"
+                            >
+                              🗑️ Delete
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              triggerSound('custom', customSound);
+                              setActiveDropdown(null);
+                            }}
+                            className="mt-1 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 py-3 text-sm font-bold text-white active:bg-emerald-400"
+                          >
+                            🚀 Send to Room
+                          </button>
+                          <audio ref={customAudioRef} className="hidden" />
+                        </>
+                      )}
+                    </div>
+                  )}
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
+          </>
         )}
 
         <div ref={chatScrollRef} className="flex-grow p-4 overflow-y-auto space-y-4 bg-slate-800/50">
@@ -810,6 +1081,50 @@ export function RoomView(props: RoomViewProps) {
             })
           )}
         </div>
+
+        {role === 'kid' && (
+          <div className="chat-effects-ui lg:hidden shrink-0 border-t border-slate-700 bg-gradient-to-t from-slate-950 to-slate-900 px-1.5 pt-2 pb-1">
+            <p className="mb-1.5 text-center text-[10px] font-bold uppercase tracking-wider text-slate-500">Fun stuff</p>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              {(
+                [
+                  { id: 'minigames' as const, Icon: Gamepad2, label: 'Games', active: 'ring-indigo-400 bg-indigo-600/30 text-indigo-200', idle: 'bg-slate-800 text-slate-300 ring-slate-600' },
+                  { id: 'sounds' as const, Icon: Music, label: 'Sounds', active: 'ring-purple-400 bg-purple-600/30 text-purple-200', idle: 'bg-slate-800 text-slate-300 ring-slate-600' },
+                  { id: 'game_sounds' as const, Icon: Zap, label: 'FX', active: 'ring-emerald-400 bg-emerald-600/30 text-emerald-200', idle: 'bg-slate-800 text-slate-300 ring-slate-600' },
+                  { id: 'reactions' as const, Icon: Laugh, label: 'React', active: 'ring-amber-400 bg-amber-600/30 text-amber-200', idle: 'bg-slate-800 text-slate-300 ring-slate-600' },
+                  { id: 'stickers' as const, Icon: Tag, label: 'Tags', active: 'ring-pink-400 bg-pink-600/30 text-pink-200', idle: 'bg-slate-800 text-slate-300 ring-slate-600' },
+                  { id: 'record' as const, Icon: Mic, label: 'Rec', active: 'ring-red-400 bg-red-600/30 text-red-200', idle: 'bg-slate-800 text-slate-300 ring-slate-600' },
+                ] as const
+              ).map(({ id, Icon, label, active, idle }) => {
+                const isOn = activeDropdown === id;
+                return (
+                  <motion.button
+                    key={id}
+                    type="button"
+                    whileTap={{ scale: 0.92 }}
+                    aria-label={label}
+                    aria-expanded={isOn}
+                    title={label}
+                    onClick={() => toggleDropdown(id)}
+                    className={`relative flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-2xl ring-2 ring-inset transition-colors ${
+                      isOn ? active : idle
+                    }`}
+                  >
+                    <Icon className="h-5 w-5" strokeWidth={2.25} aria-hidden />
+                    <span className="mt-0.5 max-w-[2.75rem] truncate text-[9px] font-bold leading-none">{label}</span>
+                    {isOn && (
+                      <motion.span
+                        layoutId="fx-dot"
+                        className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-white shadow"
+                        transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                      />
+                    )}
+                  </motion.button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <form onSubmit={handleSendMessage} className="p-4 bg-slate-900 border-t border-slate-700 flex gap-2 relative z-40">
           <button 
