@@ -1,7 +1,6 @@
 /** Defensive limits for untrusted Realtime broadcast payloads. */
 
 export const MAX_CHAT_MESSAGE_CHARS = 2000;
-export const MAX_CUSTOM_AUDIO_BASE64_CHARS = 500_000;
 export const MAX_SDP_CHARS = 200_000;
 export const MAX_ICE_CANDIDATES_PER_BATCH = 64;
 export const MAX_BROADCAST_JSON_CHARS = 600_000;
@@ -40,14 +39,6 @@ export function isChatMessagePayloadReasonable(payload: unknown): boolean {
   const p = payload as Record<string, unknown>;
   const text = p.text;
   return typeof text === 'string' && text.length <= MAX_CHAT_MESSAGE_CHARS;
-}
-
-export function isSoundPayloadReasonable(payload: unknown): boolean {
-  if (!payload || typeof payload !== 'object') return false;
-  const p = payload as Record<string, unknown>;
-  if (p.soundId !== 'custom') return typeof p.soundId === 'string' && p.soundId.length < 64;
-  const ad = p.audioData;
-  return typeof ad === 'string' && ad.length <= MAX_CUSTOM_AUDIO_BASE64_CHARS;
 }
 
 export function isReactionPayloadReasonable(payload: unknown): boolean {

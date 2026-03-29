@@ -6,7 +6,7 @@ Minevine is a fun, safe, and easy-to-use audio chat app designed specifically fo
 - **Safe Audio Chat**: Kids can join rooms with short, fun codes.
 - **Mom Mode**: Parents can join as invisible observers to monitor the chat.
 - **Voice Changer**: Fun voice effects like Robot, Cave, Radio, Chipmunk, Monster, and Alien.
-- **Soundboard & Reactions**: Send funny sounds and emojis.
+- **Reactions & stickers**: Send emojis and floating stickers in the room.
 - **Minigames**: Play word guess games while chatting.
 
 ## Getting Started

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
-import { applyVoiceEffect, playSound, VoiceEffect } from '@/lib/audioEffects';
+import { applyVoiceEffect, playTimeoutBuzzer, VoiceEffect } from '@/lib/audioEffects';
 import { filterProfanity } from '@/lib/moderation';
 import { normalizeRoomCode } from '@/lib/roomCode';
 import {
@@ -11,8 +11,6 @@ import {
   isMinigamePayloadReasonable,
   isReactionPayloadReasonable,
   isSignalPayloadReasonable,
-  isSoundPayloadReasonable,
-  MAX_CUSTOM_AUDIO_BASE64_CHARS,
   truncateChatText,
 } from '@/lib/realtimeGuards';
 
@@ -92,7 +90,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
   const peerConnections = useRef<{ [id: string]: RTCPeerConnection }>({});
   const pendingIceCandidates = useRef<{ [id: string]: RTCIceCandidateInit[] }>({});
   const disconnectTimers = useRef<{ [id: string]: NodeJS.Timeout }>({});
-  const actionHistory = useRef<{ type: 'text' | 'sound' | 'reaction', timestamp: number, content?: string }[]>([]);
+  const actionHistory = useRef<{ type: 'text' | 'reaction', timestamp: number, content?: string }[]>([]);
   const timeoutCount = useRef(0);
 
   useEffect(() => {
@@ -333,7 +331,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
     return 10;
   };
 
-  const checkSpam = (type: 'text' | 'sound' | 'reaction', content?: string) => {
+  const checkSpam = (type: 'text' | 'reaction', content?: string) => {
     const now = Date.now();
     actionHistory.current.push({ type, timestamp: now, content });
     actionHistory.current = actionHistory.current.filter(a => now - a.timestamp < 10000); // keep last 10s
@@ -341,7 +339,6 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
     const recentSameType = actionHistory.current.filter(a => a.type === type);
     const threshold = getSpamThreshold();
 
-    if (type === 'sound' && recentSameType.length > threshold) return "spamming sounds 📢";
     if (type === 'reaction' && recentSameType.length > threshold) return "spamming reactions 😂";
     if (type === 'text') {
       if (recentSameType.length > threshold) return "sending too many messages 💬";
@@ -371,7 +368,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
       });
       setChatMessages(prev => [...prev, sysMsg]);
     }
-    playSound('buzzer');
+    playTimeoutBuzzer();
   };
   
   const originalStreamRef = useRef<MediaStream | null>(null);
@@ -655,18 +652,6 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
               },
             ]);
           })
-          .on('broadcast', { event: 'sound' }, ({ payload }) => {
-            if (!isSoundPayloadReasonable(payload)) return;
-            const p = payload as { soundId: string; audioData?: string };
-            if (p.soundId === 'custom' && p.audioData) {
-              if (typeof p.audioData === 'string' && p.audioData.length <= MAX_CUSTOM_AUDIO_BASE64_CHARS) {
-                const audio = new Audio(p.audioData);
-                audio.play().catch((e) => console.error('Error playing custom sound:', e));
-              }
-            } else {
-              playSound(p.soundId);
-            }
-          })
           .on('broadcast', { event: 'minigame' }, ({ payload }) => {
             if (!isMinigamePayloadReasonable(payload)) return;
             const p = payload as {
@@ -679,10 +664,12 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
             if (p.action === 'start') {
               setActiveMinigame({ type: p.gameType, starter: p.starter, word: p.word, guesses: [] });
             } else if (p.action === 'guess' && typeof p.letter === 'string') {
-              const letter = p.letter;
+              const letter = p.letter.toUpperCase().slice(0, 1);
               setActiveMinigame((prev) => {
                 if (!prev || prev.type !== 'word_guess') return prev;
-                return { ...prev, guesses: [...(prev.guesses || []), letter] };
+                const g = prev.guesses || [];
+                if (g.includes(letter)) return prev;
+                return { ...prev, guesses: [...g, letter] };
               });
             } else if (p.action === 'end') {
               setActiveMinigame(null);
@@ -854,40 +841,15 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
     setFloatingReactions(prev => [...prev, { id: Math.random().toString(), emoji, x: Math.random() * 80 + 10, type, text, rotate }]);
   };
 
-  const triggerSound = (soundId: string, audioData?: string) => {
-    if (!channelRef.current || !isConnected) return;
-    if (timeoutUntil && Date.now() < timeoutUntil) return;
-
-    if (audioData && audioData.length > MAX_CUSTOM_AUDIO_BASE64_CHARS) {
-      console.warn('Custom audio too large');
-      return;
-    }
-
-    const spamReason = checkSpam('sound');
-    if (spamReason) {
-      applyTimeout(spamReason);
-      return;
-    }
-
-    channelRef.current.send({ type: 'broadcast', event: 'sound', payload: { soundId, audioData } });
-    
-    if (soundId === 'custom' && audioData) {
-      if (typeof audioData === 'string' && audioData.length <= MAX_CUSTOM_AUDIO_BASE64_CHARS) {
-        const audio = new Audio(audioData);
-        audio.play().catch(e => console.error("Error playing custom sound:", e));
-      }
-    } else {
-      playSound(soundId);
-    }
-  };
-
   const triggerMinigame = (gameType: string, action: 'start' | 'guess' | 'end' = 'start', data?: { word?: string, letter?: string }) => {
     if (!channelRef.current || !isConnected) return;
     if (timeoutUntil && Date.now() < timeoutUntil) return;
 
     const payload: { gameType: string, action: string, starter: string, word?: string, letter?: string } = { gameType, action, starter: username };
     if (action === 'start' && data?.word) payload.word = data.word;
-    if (action === 'guess' && data?.letter) payload.letter = data.letter;
+    if (action === 'guess' && data?.letter) {
+      payload.letter = String(data.letter).toUpperCase().slice(0, 1);
+    }
 
     channelRef.current.send({ type: 'broadcast', event: 'minigame', payload });
     
@@ -895,9 +857,12 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
     if (action === 'start') {
       setActiveMinigame({ type: gameType, starter: username, word: data?.word, guesses: [] });
     } else if (action === 'guess' && data?.letter) {
+      const letter = String(data.letter).toUpperCase().slice(0, 1);
       setActiveMinigame(prev => {
         if (!prev || prev.type !== 'word_guess') return prev;
-        return { ...prev, guesses: [...(prev.guesses || []), data.letter as string] };
+        const g = prev.guesses || [];
+        if (g.includes(letter)) return prev;
+        return { ...prev, guesses: [...g, letter] };
       });
     } else if (action === 'end') {
       setActiveMinigame(null);
@@ -1011,7 +976,6 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
     voiceEffect,
     setVoiceEffect,
     sendReaction,
-    triggerSound,
     triggerMinigame,
     activeMinigame,
     floatingReactions,

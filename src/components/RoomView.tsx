@@ -13,8 +13,6 @@ import {
   Wifi,
   MessageSquare,
   Gamepad2,
-  Music,
-  Zap,
   Laugh,
   Tag,
   LogOut,
@@ -49,7 +47,6 @@ interface RoomViewProps {
   voiceEffect: VoiceEffect;
   setVoiceEffect: (effect: VoiceEffect) => void;
   sendReaction: (emoji: string, type?: 'emoji' | 'sticker', text?: string) => void;
-  triggerSound: (soundId: string, audioData?: string) => void;
   triggerMinigame: (gameType: string, action?: 'start' | 'guess' | 'end', data?: { word?: string, letter?: string }) => void;
   activeMinigame: { type: string, starter: string, word?: string, guesses?: string[] } | null;
   floatingReactions: Reaction[];
@@ -72,7 +69,7 @@ export const RoomView = forwardRef<RoomViewHandle, RoomViewProps>(function RoomV
     roomCode, username, role, avatarVariant, avatarColors,
     peers, peerNames, kidCount, peerVolumes, setPeerVolume, peerQuality,
     isMuted, toggleMute, error, isConnected, chatMessages,
-    sendMessage, voiceEffect, setVoiceEffect, sendReaction, triggerSound,
+    sendMessage, voiceEffect, setVoiceEffect, sendReaction,
     triggerMinigame, activeMinigame, floatingReactions, removeReaction,
     timeoutUntil, timeoutReason, timeLeft, isSpeaking, isOnline, isReconnecting,
     onLeaveRoom
@@ -85,15 +82,10 @@ export const RoomView = forwardRef<RoomViewHandle, RoomViewProps>(function RoomV
   const [showWordInput, setShowWordInput] = useState(false);
   const [secretWord, setSecretWord] = useState('');
   const [easterEgg, setEasterEgg] = useState<string | null>(null);
-  const [customSound, setCustomSound] = useState<string | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   /** On small screens, show one panel at a time so users are not stuck scrolling past audio to reach chat. */
   const [mobileTab, setMobileTab] = useState<'room' | 'chat'>('room');
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
   const chatScrollRef = useRef<HTMLDivElement>(null);
-  const customAudioRef = useRef<HTMLAudioElement | null>(null);
 
   useImperativeHandle(ref, () => ({
     openLeaveConfirm: () => setShowLeaveConfirm(true),
@@ -116,50 +108,6 @@ export const RoomView = forwardRef<RoomViewHandle, RoomViewProps>(function RoomV
   const isOnlyEmojis = (str: string) => {
     const emojiRegex = /^[\p{Emoji}\s]+$/u;
     return emojiRegex.test(str) && str.trim().length > 0;
-  };
-
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        const reader = new FileReader();
-        reader.readAsDataURL(audioBlob);
-        reader.onloadend = () => {
-          const base64data = reader.result as string;
-          setCustomSound(base64data);
-        };
-        stream.getTracks().forEach(track => track.stop());
-      };
-
-      mediaRecorder.start();
-      setIsRecording(true);
-      
-      setTimeout(() => {
-        if (mediaRecorderRef.current?.state === 'recording') {
-          stopRecording();
-        }
-      }, 3000);
-    } catch (err) {
-      console.error('Error accessing microphone for recording:', err);
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-    }
   };
 
   /* eslint-disable react-hooks/set-state-in-effect -- easter-egg reactions tied to latest chat line */
@@ -214,11 +162,21 @@ export const RoomView = forwardRef<RoomViewHandle, RoomViewProps>(function RoomV
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (chatInput.trim()) {
-      sendMessage(chatInput.trim());
-      setChatInput('');
-      setShowEmojiPicker(false);
+    const raw = chatInput.trim();
+    if (!raw) return;
+
+    if (
+      role === 'kid' &&
+      activeMinigame?.type === 'word_guess' &&
+      activeMinigame.word &&
+      /^[A-Za-z]$/.test(raw)
+    ) {
+      triggerMinigame('word_guess', 'guess', { letter: raw.toUpperCase() });
     }
+
+    sendMessage(raw);
+    setChatInput('');
+    setShowEmojiPicker(false);
   };
 
   const onEmojiClick = (emojiObject: { emoji: string }) => {
@@ -461,7 +419,7 @@ export const RoomView = forwardRef<RoomViewHandle, RoomViewProps>(function RoomV
         )}
       </motion.div>
 
-      {/* Right Column: Chat & Soundboard */}
+      {/* Right Column: Chat & fun controls */}
       <motion.div 
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
@@ -519,7 +477,7 @@ export const RoomView = forwardRef<RoomViewHandle, RoomViewProps>(function RoomV
           )}
         </AnimatePresence>
 
-        {/* Soundboard & Minigames — wide screens: top strip; narrow: dock above input + bottom sheet */}
+        {/* Minigames & reactions — wide screens: top strip; narrow: dock + bottom sheet */}
         {role === 'kid' && (
           <>
           <div className="hidden lg:flex p-2 sm:p-4 bg-slate-900 border-b border-slate-700 flex flex-wrap justify-center gap-2 shrink-0 z-10">
@@ -587,60 +545,6 @@ export const RoomView = forwardRef<RoomViewHandle, RoomViewProps>(function RoomV
               </AnimatePresence>
             </div>
 
-            {/* Funny Sounds Dropdown */}
-            <div className="relative dropdown-container">
-              <button 
-                type="button"
-                onClick={() => toggleDropdown('sounds')}
-                className="shrink-0 px-3 sm:px-4 py-2 min-h-[44px] bg-purple-500 active:bg-purple-400 text-white rounded-xl text-sm font-bold transition-colors flex items-center gap-2 whitespace-nowrap"
-              >
-                🎵 Sounds
-              </button>
-              <AnimatePresence>
-                {activeDropdown === 'sounds' && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 10 }}
-                    className="absolute top-full left-0 mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-xl p-2 w-[min(92vw,12rem)] max-h-[min(50vh,280px)] overflow-y-auto z-50 flex flex-col gap-1"
-                  >
-                    <button onClick={() => { triggerSound('laser'); setActiveDropdown(null); }} className="w-full text-left px-3 py-2 hover:bg-slate-700 rounded-lg text-white text-sm flex items-center gap-2">🔫 Laser</button>
-                    <button onClick={() => { triggerSound('magic'); setActiveDropdown(null); }} className="w-full text-left px-3 py-2 hover:bg-slate-700 rounded-lg text-white text-sm flex items-center gap-2">✨ Magic</button>
-                    <button onClick={() => { triggerSound('fart'); setActiveDropdown(null); }} className="w-full text-left px-3 py-2 hover:bg-slate-700 rounded-lg text-white text-sm flex items-center gap-2">💨 Fart</button>
-                    <button onClick={() => { triggerSound('applause'); setActiveDropdown(null); }} className="w-full text-left px-3 py-2 hover:bg-slate-700 rounded-lg text-white text-sm flex items-center gap-2">👏 Applause</button>
-                    <button onClick={() => { triggerSound('trombone'); setActiveDropdown(null); }} className="w-full text-left px-3 py-2 hover:bg-slate-700 rounded-lg text-white text-sm flex items-center gap-2">🎺 Sad Trombone</button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            {/* Game Sounds Dropdown */}
-            <div className="relative dropdown-container">
-              <button 
-                type="button"
-                onClick={() => toggleDropdown('game_sounds')}
-                className="shrink-0 px-3 sm:px-4 py-2 min-h-[44px] bg-emerald-500 active:bg-emerald-400 text-white rounded-xl text-sm font-bold transition-colors flex items-center gap-2 whitespace-nowrap"
-              >
-                🎮 FX
-              </button>
-              <AnimatePresence>
-                {activeDropdown === 'game_sounds' && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 10 }}
-                    className="absolute top-full left-0 mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-xl p-2 w-[min(92vw,12rem)] max-h-[min(50vh,280px)] overflow-y-auto z-50 flex flex-col gap-1"
-                  >
-                    <button onClick={() => { triggerSound('mc_break'); setActiveDropdown(null); }} className="w-full text-left px-3 py-2 hover:bg-slate-700 rounded-lg text-white text-sm flex items-center gap-2">⛏️ Block Break</button>
-                    <button onClick={() => { triggerSound('fn_shield'); setActiveDropdown(null); }} className="w-full text-left px-3 py-2 hover:bg-slate-700 rounded-lg text-white text-sm flex items-center gap-2">🛡️ Shield Pop</button>
-                    <button onClick={() => { triggerSound('mario_coin'); setActiveDropdown(null); }} className="w-full text-left px-3 py-2 hover:bg-slate-700 rounded-lg text-white text-sm flex items-center gap-2">🪙 Coin</button>
-                    <button onClick={() => { triggerSound('roblox_oof'); setActiveDropdown(null); }} className="w-full text-left px-3 py-2 hover:bg-slate-700 rounded-lg text-white text-sm flex items-center gap-2">🤕 Oof</button>
-                    <button onClick={() => { triggerSound('jump'); setActiveDropdown(null); }} className="w-full text-left px-3 py-2 hover:bg-slate-700 rounded-lg text-white text-sm flex items-center gap-2">🦘 Jump</button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
             {/* Reactions Dropdown */}
             <div className="relative dropdown-container">
               <button 
@@ -691,78 +595,6 @@ export const RoomView = forwardRef<RoomViewHandle, RoomViewProps>(function RoomV
                     <button onClick={() => { sendReaction('🏆', 'sticker', 'EPIC'); setActiveDropdown(null); }} className="w-full py-2 bg-slate-700 hover:bg-emerald-500 text-white rounded-lg transition-colors text-xs font-black tracking-widest">EPIC</button>
                     <button onClick={() => { sendReaction('🤦‍♂️', 'sticker', 'NOOB'); setActiveDropdown(null); }} className="w-full py-2 bg-slate-700 hover:bg-amber-500 text-white rounded-lg transition-colors text-xs font-black tracking-widest">NOOB</button>
                     <button onClick={() => { sendReaction('🚽', 'sticker', 'SKIBIDI'); setActiveDropdown(null); }} className="w-full py-2 bg-slate-700 hover:bg-purple-500 text-white rounded-lg transition-colors text-xs font-black tracking-widest">SKIBIDI</button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            {/* Record Custom Sound Dropdown */}
-            <div className="relative dropdown-container">
-              <button 
-                type="button"
-                onClick={() => toggleDropdown('record')}
-                className={`shrink-0 px-3 sm:px-4 py-2 min-h-[44px] whitespace-nowrap ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-red-600 active:bg-red-500'} text-white rounded-xl text-sm font-bold transition-colors flex items-center gap-2`}
-              >
-                🎤 Record
-              </button>
-              <AnimatePresence>
-                {activeDropdown === 'record' && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 10 }}
-                    className="absolute top-full right-0 mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-xl p-3 w-[min(92vw,14rem)] max-h-[min(50vh,280px)] overflow-y-auto z-50 flex flex-col gap-2"
-                  >
-                    {isRecording ? (
-                      <button 
-                        onClick={stopRecording}
-                        className="w-full py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-2"
-                      >
-                        ⏹️ Stop Recording
-                      </button>
-                    ) : (
-                      <button 
-                        onClick={startRecording}
-                        className="w-full py-2 bg-slate-700 hover:bg-red-500 text-white rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-2"
-                      >
-                        ⏺️ Start Recording (3s)
-                      </button>
-                    )}
-
-                    {customSound && !isRecording && (
-                      <>
-                        <div className="h-px bg-slate-700 my-1"></div>
-                        <div className="flex gap-2">
-                          <button 
-                            onClick={() => {
-                              if (customAudioRef.current) {
-                                customAudioRef.current.src = customSound;
-                                customAudioRef.current.play();
-                              }
-                            }}
-                            className="flex-1 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-1"
-                          >
-                            ▶️ Play
-                          </button>
-                          <button 
-                            onClick={() => setCustomSound(null)}
-                            className="flex-1 py-2 bg-slate-700 hover:bg-red-500/50 text-white rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-1"
-                          >
-                            🗑️ Delete
-                          </button>
-                        </div>
-                        <button 
-                          onClick={() => {
-                            triggerSound('custom', customSound);
-                            setActiveDropdown(null);
-                          }}
-                          className="w-full py-2 bg-emerald-500 hover:bg-emerald-400 text-white rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-2 mt-1"
-                        >
-                          🚀 Send to Room
-                        </button>
-                        <audio ref={customAudioRef} className="hidden" />
-                      </>
-                    )}
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -844,64 +676,6 @@ export const RoomView = forwardRef<RoomViewHandle, RoomViewProps>(function RoomV
                       )}
                     </div>
                   )}
-                  {activeDropdown === 'sounds' && (
-                    <div className="space-y-1">
-                      <p className="mb-2 text-center text-xs font-bold uppercase tracking-wide text-purple-300">Fun sounds</p>
-                      {(
-                        [
-                          ['laser', '🔫 Laser'],
-                          ['magic', '✨ Magic'],
-                          ['fart', '💨 Fart'],
-                          ['applause', '👏 Applause'],
-                          ['trombone', '🎺 Sad Trombone'],
-                        ] as const
-                      ).map(([id, label], i) => (
-                        <motion.button
-                          key={id}
-                          type="button"
-                          initial={{ opacity: 0, x: -12 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: 0.04 * i }}
-                          onClick={() => {
-                            triggerSound(id);
-                            setActiveDropdown(null);
-                          }}
-                          className="flex w-full items-center gap-2 rounded-xl bg-slate-700/80 px-3 py-2.5 text-left text-sm font-semibold text-white active:scale-[0.98] active:bg-purple-600/40"
-                        >
-                          {label}
-                        </motion.button>
-                      ))}
-                    </div>
-                  )}
-                  {activeDropdown === 'game_sounds' && (
-                    <div className="space-y-1">
-                      <p className="mb-2 text-center text-xs font-bold uppercase tracking-wide text-emerald-300">Game FX</p>
-                      {(
-                        [
-                          ['mc_break', '⛏️ Block Break'],
-                          ['fn_shield', '🛡️ Shield Pop'],
-                          ['mario_coin', '🪙 Coin'],
-                          ['roblox_oof', '🤕 Oof'],
-                          ['jump', '🦘 Jump'],
-                        ] as const
-                      ).map(([id, label], i) => (
-                        <motion.button
-                          key={id}
-                          type="button"
-                          initial={{ opacity: 0, x: -12 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: 0.04 * i }}
-                          onClick={() => {
-                            triggerSound(id);
-                            setActiveDropdown(null);
-                          }}
-                          className="flex w-full items-center gap-2 rounded-xl bg-slate-700/80 px-3 py-2.5 text-left text-sm font-semibold text-white active:scale-[0.98] active:bg-emerald-600/40"
-                        >
-                          {label}
-                        </motion.button>
-                      ))}
-                    </div>
-                  )}
                   {activeDropdown === 'reactions' && (
                     <div>
                       <p className="mb-2 text-center text-xs font-bold uppercase tracking-wide text-amber-300">Quick react</p>
@@ -954,65 +728,6 @@ export const RoomView = forwardRef<RoomViewHandle, RoomViewProps>(function RoomV
                       ))}
                     </div>
                   )}
-                  {activeDropdown === 'record' && (
-                    <div className="space-y-2">
-                      <p className="text-center text-xs font-bold uppercase tracking-wide text-red-300">Record a sound</p>
-                      {isRecording ? (
-                        <button
-                          type="button"
-                          onClick={stopRecording}
-                          className="flex w-full items-center justify-center gap-2 rounded-xl bg-red-500 py-3 text-sm font-bold text-white active:bg-red-600"
-                        >
-                          ⏹️ Stop Recording
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={startRecording}
-                          className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-700 py-3 text-sm font-bold text-white active:bg-red-500/80"
-                        >
-                          ⏺️ Start Recording (3s)
-                        </button>
-                      )}
-                      {customSound && !isRecording && (
-                        <>
-                          <div className="my-1 h-px bg-slate-700" />
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (customAudioRef.current) {
-                                  customAudioRef.current.src = customSound;
-                                  customAudioRef.current.play();
-                                }
-                              }}
-                              className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-slate-700 py-2 text-sm font-bold text-white active:bg-slate-600"
-                            >
-                              ▶️ Play
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setCustomSound(null)}
-                              className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-slate-700 py-2 text-sm font-bold text-white active:bg-red-500/50"
-                            >
-                              🗑️ Delete
-                            </button>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              triggerSound('custom', customSound);
-                              setActiveDropdown(null);
-                            }}
-                            className="mt-1 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 py-3 text-sm font-bold text-white active:bg-emerald-400"
-                          >
-                            🚀 Send to Room
-                          </button>
-                          <audio ref={customAudioRef} className="hidden" />
-                        </>
-                      )}
-                    </div>
-                  )}
                 </motion.div>
               </>
             )}
@@ -1049,11 +764,8 @@ export const RoomView = forwardRef<RoomViewHandle, RoomViewProps>(function RoomV
               {(
                 [
                   { id: 'minigames' as const, Icon: Gamepad2, label: 'Games', active: 'ring-indigo-400 bg-indigo-600/30 text-indigo-200', idle: 'bg-slate-800 text-slate-300 ring-slate-600' },
-                  { id: 'sounds' as const, Icon: Music, label: 'Sounds', active: 'ring-purple-400 bg-purple-600/30 text-purple-200', idle: 'bg-slate-800 text-slate-300 ring-slate-600' },
-                  { id: 'game_sounds' as const, Icon: Zap, label: 'FX', active: 'ring-emerald-400 bg-emerald-600/30 text-emerald-200', idle: 'bg-slate-800 text-slate-300 ring-slate-600' },
                   { id: 'reactions' as const, Icon: Laugh, label: 'React', active: 'ring-amber-400 bg-amber-600/30 text-amber-200', idle: 'bg-slate-800 text-slate-300 ring-slate-600' },
                   { id: 'stickers' as const, Icon: Tag, label: 'Tags', active: 'ring-pink-400 bg-pink-600/30 text-pink-200', idle: 'bg-slate-800 text-slate-300 ring-slate-600' },
-                  { id: 'record' as const, Icon: Mic, label: 'Rec', active: 'ring-red-400 bg-red-600/30 text-red-200', idle: 'bg-slate-800 text-slate-300 ring-slate-600' },
                 ] as const
               ).map(({ id, Icon, label, active, idle }) => {
                 const isOn = activeDropdown === id;
