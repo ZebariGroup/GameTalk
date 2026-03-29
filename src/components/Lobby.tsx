@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Dices, Sparkles, ShieldCheck } from 'lucide-react';
 import Avatar from 'boring-avatars';
 import { generateName } from '@/lib/generateName';
+import { PwaInstallPrompt } from '@/components/PwaInstallPrompt';
 
 export const AVATAR_VARIANTS = ['beam', 'marble', 'pixel', 'sunset', 'ring', 'bauhaus'] as const;
 export const COLOR_PALETTES = [
@@ -53,11 +54,11 @@ export function Lobby({
   };
 
   return (
-    <div className="min-h-[100dvh] bg-slate-900 text-white flex flex-col items-center justify-center px-3 py-4 sm:p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+    <div className="min-h-[100dvh] w-full max-w-md mx-auto bg-slate-900 text-white flex flex-col items-center justify-center px-3 py-4 sm:p-4 pb-[max(1rem,env(safe-area-inset-bottom))] box-border">
       <motion.div 
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="max-w-md w-full"
+        className="w-full"
       >
         <div className="text-center mb-6 sm:mb-10 md:mb-12 flex flex-col items-center">
           <h1 className="sr-only">Minevine - Safe Audio Chat for Kids Gaming</h1>
@@ -170,6 +171,8 @@ export function Lobby({
           </div>
         </div>
         
+        <PwaInstallPrompt />
+
         <div className="mt-6 sm:mt-8 flex justify-center px-1">
           <button
             type="button"

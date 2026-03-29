@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Mic,
@@ -17,6 +17,7 @@ import {
   Zap,
   Laugh,
   Tag,
+  LogOut,
 } from 'lucide-react';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
 import confetti from 'canvas-confetti';
@@ -62,7 +63,11 @@ interface RoomViewProps {
   onLeaveRoom: () => void;
 }
 
-export function RoomView(props: RoomViewProps) {
+export type RoomViewHandle = {
+  openLeaveConfirm: () => void;
+};
+
+export const RoomView = forwardRef<RoomViewHandle, RoomViewProps>(function RoomView(props, ref) {
   const {
     roomCode, username, role, avatarVariant, avatarColors,
     peers, peerNames, kidCount, peerVolumes, setPeerVolume, peerQuality,
@@ -90,6 +95,10 @@ export function RoomView(props: RoomViewProps) {
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const customAudioRef = useRef<HTMLAudioElement | null>(null);
 
+  useImperativeHandle(ref, () => ({
+    openLeaveConfirm: () => setShowLeaveConfirm(true),
+  }));
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       const el = e.target as Element;
@@ -103,10 +112,6 @@ export function RoomView(props: RoomViewProps) {
   const toggleDropdown = (name: string) => {
     setActiveDropdown(prev => prev === name ? null : name);
   };
-
-  useEffect(() => {
-    if (mobileTab !== 'chat') setActiveDropdown(null);
-  }, [mobileTab]);
 
   const isOnlyEmojis = (str: string) => {
     const emojiRegex = /^[\p{Emoji}\s]+$/u;
@@ -248,76 +253,31 @@ export function RoomView(props: RoomViewProps) {
         </div>
       )}
 
-      {/* Leave Confirmation Modal */}
-      <AnimatePresence>
-        {showLeaveConfirm && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
-          >
-            <motion.div 
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 20 }}
-              className="bg-slate-800 p-8 rounded-3xl shadow-2xl max-w-sm w-full border border-slate-700 text-center"
-            >
-              <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                <PhoneOff className="w-10 h-10 text-red-500" />
-              </div>
-              <h3 className="text-2xl font-black text-white mb-2">Leaving so soon?</h3>
-              <p className="text-slate-400 mb-8">Are you sure you want to leave the chat room?</p>
-              <div className="flex gap-4">
-                <button 
-                  onClick={() => setShowLeaveConfirm(false)}
-                  className="flex-1 py-3 px-4 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold transition-colors"
-                >
-                  No, stay
-                </button>
-                <button 
-                  onClick={onLeaveRoom}
-                  className="flex-1 py-3 px-4 bg-red-500 hover:bg-red-600 text-white rounded-xl font-bold transition-colors shadow-lg shadow-red-500/20"
-                >
-                  Yes, leave
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <div className="flex min-h-0 flex-1 flex-col w-full max-w-5xl lg:max-w-6xl mx-auto px-3 sm:px-4 md:px-6">
+      <header className="relative z-[60] flex shrink-0 items-center justify-between gap-3 border-b border-slate-800/80 bg-slate-950/90 py-2.5 pt-[max(0.35rem,env(safe-area-inset-top))] backdrop-blur-md md:mt-2 md:rounded-t-2xl md:border md:border-b-0 md:border-slate-800">
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Room</p>
+          <p className="truncate font-mono text-sm font-black text-emerald-400 sm:text-base" title={roomCode}>
+            {roomCode}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowLeaveConfirm(true)}
+          className="flex shrink-0 items-center gap-2 rounded-xl border border-red-500/40 bg-red-500/15 px-3 py-2 text-sm font-bold text-red-300 transition-colors hover:bg-red-500/25 active:scale-[0.98]"
+        >
+          <LogOut className="h-4 w-4" aria-hidden />
+          <span className="sm:hidden">Leave</span>
+          <span className="hidden sm:inline">Leave room</span>
+        </button>
+      </header>
 
-      {/* Floating Reactions Layer */}
-      <div className="pointer-events-none fixed inset-0 z-50 overflow-hidden">
-        <AnimatePresence>
-          {floatingReactions.map(reaction => (
-            <motion.div
-              key={reaction.id}
-              initial={{ opacity: 1, y: '100vh', x: `${reaction.x}vw`, scale: reaction.type === 'sticker' ? 0.5 : 1, rotate: reaction.type === 'sticker' ? (reaction.rotate || 0) : 0 }}
-              animate={{ opacity: 0, y: '-10vh', scale: reaction.type === 'sticker' ? 2 : 2 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: reaction.type === 'sticker' ? 4 : 3, ease: 'easeOut' }}
-              className={`absolute ${reaction.type === 'sticker' ? 'z-50' : 'text-6xl z-40'}`}
-              onAnimationComplete={() => removeReaction(reaction.id)}
-            >
-              {reaction.type === 'sticker' ? (
-                <div className="text-5xl md:text-7xl font-black text-white drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)] uppercase tracking-widest" style={{ WebkitTextStroke: '3px black' }}>
-                  {reaction.text} {reaction.emoji}
-                </div>
-              ) : (
-                reaction.emoji
-              )}
-            </motion.div>
-          ))}
-        </AnimatePresence>
-      </div>
-
-      <div className="flex flex-1 flex-col min-h-0 md:flex-row md:items-stretch md:justify-center px-3 md:px-4 pt-[max(0.5rem,env(safe-area-inset-top))] md:pt-4 gap-3 md:gap-6">
+      <div className="flex flex-1 flex-col min-h-0 md:flex-row md:items-stretch md:justify-center pt-2 md:pt-4 pb-2 md:pb-4 gap-3 md:gap-6">
       {/* Left Column: Audio & Controls */}
       <motion.div 
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
-        className={`bg-slate-800 p-3 sm:p-4 md:p-8 rounded-2xl md:rounded-3xl shadow-2xl w-full max-w-md md:self-center text-center border border-slate-700 flex flex-col min-h-0 overflow-y-auto md:overflow-visible md:flex-1 md:h-[85vh] ${
+        className={`bg-slate-800 p-3 sm:p-4 md:p-8 rounded-2xl md:rounded-3xl shadow-2xl w-full max-w-md md:flex-none md:self-stretch text-center border border-slate-700 flex flex-col min-h-0 overflow-y-auto md:overflow-visible md:h-[min(85vh,920px)] ${
           mobileTab === 'room' ? 'flex flex-1' : 'hidden md:flex'
         }`}
       >
@@ -505,7 +465,7 @@ export function RoomView(props: RoomViewProps) {
       <motion.div 
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
-        className={`bg-slate-800 rounded-2xl md:rounded-3xl shadow-2xl w-full max-w-md md:self-center border border-slate-700 flex flex-col min-h-0 overflow-hidden md:flex-1 md:h-[85vh] ${
+        className={`bg-slate-800 rounded-2xl md:rounded-3xl shadow-2xl w-full max-w-md md:flex-none md:self-stretch border border-slate-700 flex flex-col min-h-0 overflow-hidden md:h-[min(85vh,920px)] ${
           mobileTab === 'chat' ? 'flex flex-1' : 'hidden md:flex'
         }`}
       >
@@ -1170,6 +1130,74 @@ export function RoomView(props: RoomViewProps) {
         </form>
       </motion.div>
       </div>
+      </div>
+
+      {/* Leave Confirmation Modal */}
+      <AnimatePresence>
+        {showLeaveConfirm && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-slate-800 p-8 rounded-3xl shadow-2xl max-w-sm w-full border border-slate-700 text-center"
+            >
+              <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                <PhoneOff className="w-10 h-10 text-red-500" />
+              </div>
+              <h3 className="text-2xl font-black text-white mb-2">Leaving so soon?</h3>
+              <p className="text-slate-400 mb-8">Are you sure you want to leave the chat room?</p>
+              <div className="flex gap-4">
+                <button 
+                  onClick={() => setShowLeaveConfirm(false)}
+                  className="flex-1 py-3 px-4 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold transition-colors"
+                >
+                  No, stay
+                </button>
+                <button 
+                  onClick={() => {
+                    setShowLeaveConfirm(false);
+                    onLeaveRoom();
+                  }}
+                  className="flex-1 py-3 px-4 bg-red-500 hover:bg-red-600 text-white rounded-xl font-bold transition-colors shadow-lg shadow-red-500/20"
+                >
+                  Yes, leave
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating Reactions Layer */}
+      <div className="pointer-events-none fixed inset-0 z-50 overflow-hidden">
+        <AnimatePresence>
+          {floatingReactions.map(reaction => (
+            <motion.div
+              key={reaction.id}
+              initial={{ opacity: 1, y: '100vh', x: `${reaction.x}vw`, scale: reaction.type === 'sticker' ? 0.5 : 1, rotate: reaction.type === 'sticker' ? (reaction.rotate || 0) : 0 }}
+              animate={{ opacity: 0, y: '-10vh', scale: reaction.type === 'sticker' ? 2 : 2 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: reaction.type === 'sticker' ? 4 : 3, ease: 'easeOut' }}
+              className={`absolute ${reaction.type === 'sticker' ? 'z-50' : 'text-6xl z-40'}`}
+              onAnimationComplete={() => removeReaction(reaction.id)}
+            >
+              {reaction.type === 'sticker' ? (
+                <div className="text-5xl md:text-7xl font-black text-white drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)] uppercase tracking-widest" style={{ WebkitTextStroke: '3px black' }}>
+                  {reaction.text} {reaction.emoji}
+                </div>
+              ) : (
+                reaction.emoji
+              )}
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
 
       <nav
         className="md:hidden flex shrink-0 border-t border-slate-700/80 bg-slate-950/95 backdrop-blur-md z-[70] pb-[env(safe-area-inset-bottom)] shadow-[0_-4px_24px_rgba(0,0,0,0.35)]"
@@ -1177,7 +1205,10 @@ export function RoomView(props: RoomViewProps) {
       >
         <button
           type="button"
-          onClick={() => setMobileTab('room')}
+          onClick={() => {
+            setMobileTab('room');
+            setActiveDropdown(null);
+          }}
           className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 min-h-[52px] text-xs font-bold transition-colors ${
             mobileTab === 'room' ? 'text-emerald-400' : 'text-slate-500 active:text-slate-300'
           }`}
@@ -1198,4 +1229,6 @@ export function RoomView(props: RoomViewProps) {
       </nav>
     </div>
   );
-}
+});
+
+RoomView.displayName = 'RoomView';

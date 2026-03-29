@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import type { RoomViewHandle } from '@/components/RoomView';
 import { generateName } from '@/lib/generateName';
 import { useAudioChat, UserRole } from '@/hooks/useAudioChat';
 import { Lobby, AVATAR_VARIANTS, COLOR_PALETTES } from '@/components/Lobby';
@@ -14,10 +15,23 @@ export default function Home() {
   const [avatarVariant, setAvatarVariant] = useState<typeof AVATAR_VARIANTS[number]>('beam');
   const [avatarColors, setAvatarColors] = useState<string[]>(COLOR_PALETTES[0].colors);
   const [error, setError] = useState<string | null>(null);
+  const roomViewRef = useRef<RoomViewHandle | null>(null);
 
   useEffect(() => {
     setUsername(generateName());
   }, []);
+
+  /** Browser back while in a room opens the leave confirmation instead of exiting the app. */
+  useEffect(() => {
+    if (!roomCode) return;
+    window.history.pushState({ minevineInRoom: true }, '', window.location.href);
+    const onPopState = () => {
+      roomViewRef.current?.openLeaveConfirm();
+      window.history.pushState({ minevineInRoom: true }, '', window.location.href);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [roomCode]);
 
   const role: UserRole = isMomMode ? 'observer' : 'kid';
 
@@ -72,6 +86,12 @@ export default function Home() {
   };
 
   const handleLeaveRoom = () => {
+    if (typeof window !== 'undefined') {
+      const st = window.history.state as { minevineInRoom?: boolean } | null;
+      if (st?.minevineInRoom) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+    }
     setRoomCode(null);
     setIsMomMode(false);
   };
@@ -79,6 +99,7 @@ export default function Home() {
   if (roomCode) {
     return (
       <RoomView
+        ref={roomViewRef}
         roomCode={roomCode}
         username={username}
         role={role}

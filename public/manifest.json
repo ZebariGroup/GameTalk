@@ -1,21 +1,43 @@
 {
-  "name": "Minevine",
+  "id": "/",
+  "name": "Minevine — Safe Audio Chat for Gaming",
   "short_name": "Minevine",
-  "description": "Fun, safe audio chat for gaming.",
+  "description": "Fun, safe audio chat for kids playing games. Voice effects, reactions, and rooms.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "browser"],
+  "orientation": "any",
   "background_color": "#0f172a",
   "theme_color": "#0f172a",
+  "categories": ["social", "entertainment", "kids"],
   "icons": [
     {
       "src": "/icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "/icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Open Minevine",
+      "short_name": "Open",
+      "description": "Start or join a voice room",
+      "url": "/",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ]
 }
