@@ -76,6 +76,7 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
   const [isReconnecting, setIsReconnecting] = useState(false);
 
   const [activeMinigame, setActiveMinigame] = useState<{ type: string, starter: string, word?: string, guesses?: string[] } | null>(null);
+  const activeMinigameRef = useRef(activeMinigame);
 
   const [myId] = useState(() => Math.random().toString(36).substring(2, 15));
   const myIdRef = useRef(myId);
@@ -105,6 +106,10 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
   useEffect(() => {
     isConnectedRef.current = isConnected;
   }, [isConnected]);
+
+  useEffect(() => {
+    activeMinigameRef.current = activeMinigame;
+  }, [activeMinigame]);
 
   useEffect(() => {
     setIsOnline(typeof window !== 'undefined' ? navigator.onLine : true);
@@ -844,6 +849,11 @@ export function useAudioChat(roomCode: string | null, username: string, role: Us
   const triggerMinigame = (gameType: string, action: 'start' | 'guess' | 'end' = 'start', data?: { word?: string, letter?: string }) => {
     if (!channelRef.current || !isConnected) return;
     if (timeoutUntil && Date.now() < timeoutUntil) return;
+
+    if (action === 'guess' && gameType === 'word_guess') {
+      const host = activeMinigameRef.current?.starter;
+      if (host && username === host) return;
+    }
 
     const payload: { gameType: string, action: string, starter: string, word?: string, letter?: string } = { gameType, action, starter: username };
     if (action === 'start' && data?.word) payload.word = data.word;

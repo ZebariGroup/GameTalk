@@ -168,7 +168,7 @@ export const RoomView = forwardRef<RoomViewHandle, RoomViewProps>(function RoomV
     if (
       role === 'kid' &&
       activeMinigame?.type === 'word_guess' &&
-      activeMinigame.word &&
+      activeMinigame.starter !== username &&
       /^[A-Za-z]$/.test(raw)
     ) {
       triggerMinigame('word_guess', 'guess', { letter: raw.toUpperCase() });
@@ -471,7 +471,9 @@ export const RoomView = forwardRef<RoomViewHandle, RoomViewProps>(function RoomV
               )}
               
               <div className="text-xs text-indigo-200 text-center">
-                Type a single letter in chat to guess!
+                {username === activeMinigame.starter
+                  ? 'You set the word — other players type one letter at a time in chat to guess.'
+                  : 'Type a single letter in chat to guess!'}
               </div>
             </motion.div>
           )}
